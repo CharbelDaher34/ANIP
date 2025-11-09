@@ -1,0 +1,216 @@
+x-networks:
+  &default-networks
+  networks:
+    - anip-net
+
+x-restart: &restart_policy
+  restart: unless-stopped
+
+x-common: &common-config
+  networks:
+    - anip-net
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: anip-postgres
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - ./volumes/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    <<: *common-config
+
+  # One-time init to create both DBs (anip + airflow)
+  pg-init:
+    image: postgres:16
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    command: >
+      bash -c "
+      psql -h postgres -U ${POSTGRES_USER} -tc \"SELECT 1 FROM pg_database WHERE datname='${AIRFLOW_DB}'\" | grep -q 1 || psql -h postgres -U ${POSTGRES_USER} -c \"CREATE DATABASE ${AIRFLOW_DB}\";
+      psql -h postgres -U ${POSTGRES_USER} -tc \"SELECT 1 FROM pg_roles WHERE rolname='${AIRFLOW_DB_USER}'\" | grep -q 1 || psql -h postgres -U ${POSTGRES_USER} -c \"CREATE USER ${AIRFLOW_DB_USER} WITH PASSWORD '${AIRFLOW_DB_PASSWORD}'\";
+      psql -h postgres -U ${POSTGRES_USER} -c \"GRANT ALL PRIVILEGES ON DATABASE ${AIRFLOW_DB} TO ${AIRFLOW_DB_USER}\";
+      psql -h postgres -U ${POSTGRES_USER} -d ${AIRFLOW_DB} -c \"GRANT ALL ON SCHEMA public TO ${AIRFLOW_DB_USER}\";
+      psql -h postgres -U ${POSTGRES_USER} -d ${AIRFLOW_DB} -c \"GRANT CREATE ON SCHEMA public TO ${AIRFLOW_DB_USER}\";
+      echo 'Init done.'
+      "
+    <<: *default-networks
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    hostname: kafka
+    container_name: anip-kafka
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"  # For single-node setup
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1  # For single-node setup
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    <<: *common-config
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: anip-kafka-ui
+    environment:
+      KAFKA_CLUSTERS_0_NAME: anip
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "${KAFKA_UI_PORT}:8080"
+    depends_on:
+      - kafka
+    <<: *common-config
+
+  spark-master:
+    image: apache/spark:4.0.0
+    container_name: spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "${SPARK_MASTER_RPC_PORT}:7077"
+      - "${SPARK_MASTER_WEB_PORT}:8080"
+    environment:
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+    volumes:
+      - ./volumes/data:/data
+    <<: *common-config
+
+  spark-worker:
+    image: apache/spark:4.0.0
+    container_name: spark-worker
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    ports:
+      - "${SPARK_WORKER_WEB_PORT}:8081"
+    environment:
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_WORKER_CORES: 2
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+    volumes:
+      - ./volumes/data:/data
+    <<: *common-config
+
+  mlflow:
+    build:
+      context: ./services/mlflow
+    container_name: anip-mlflow
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlruns
+      --host 0.0.0.0
+      --port ${MLFLOW_PORT}
+    volumes:
+      - ./volumes/mlruns:/mlruns
+      - ./volumes/mlruns:/mlflow
+    <<: *common-config
+
+  airflow-init:
+    image: ${AIRFLOW_IMAGE}
+    container_name: anip-airflow-init
+    depends_on:
+      pg-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-apache-spark apache-airflow-providers-apache-kafka psycopg2-binary
+      AIRFLOW_UID: ${AIRFLOW_UID}
+    user: "${AIRFLOW_UID}:${AIRFLOW_GID}"
+    entrypoint: /bin/bash
+    command: -c "airflow db upgrade && airflow users create --role Admin --username admin --password admin --firstname Admin --lastname User --email admin@example.com"
+    volumes:
+      - ./volumes/airflow/dags:/opt/airflow/dags
+      - ./volumes/airflow/logs:/opt/airflow/logs
+      - ./volumes/airflow/plugins:/opt/airflow/plugins
+    <<: *default-networks
+
+  airflow-scheduler:
+    image: ${AIRFLOW_IMAGE}
+    container_name: anip-airflow-scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW_UID: ${AIRFLOW_UID}
+    user: "${AIRFLOW_UID}:${AIRFLOW_GID}"
+    command: ["airflow", "scheduler"]
+    volumes:
+      - ./volumes/airflow/dags:/opt/airflow/dags
+      - ./volumes/airflow/logs:/opt/airflow/logs
+      - ./volumes/airflow/plugins:/opt/airflow/plugins
+    <<: *common-config
+
+  airflow-webserver:
+    image: ${AIRFLOW_IMAGE}
+    container_name: anip-airflow-webserver
+    depends_on:
+      airflow-scheduler:
+        condition: service_started
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW_UID: ${AIRFLOW_UID}
+    user: "${AIRFLOW_UID}:${AIRFLOW_GID}"
+    ports:
+      - "8080:8080"
+    command: ["airflow", "webserver"]
+    volumes:
+      - ./volumes/airflow/dags:/opt/airflow/dags
+      - ./volumes/airflow/logs:/opt/airflow/logs
+      - ./volumes/airflow/plugins:/opt/airflow/plugins
+    <<: *common-config
+
+  api:
+    build:
+      context: ./services/api
+    container_name: anip-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      NEWSAPI_KEY: ${NEWSAPI_KEY}
+    volumes:
+      - ./services/api/app:/app
+      - ./volumes/data:/data
+      - ./volumes/models:/models
+    ports:
+      - "${API_PORT}:8000"
+    <<: *common-config
+
+networks:
+  anip-net:
+    driver: bridge
+
+volumes:
+  kafka-data:
