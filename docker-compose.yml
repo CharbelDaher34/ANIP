@@ -223,7 +223,8 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-anip}
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
     volumes:
-      - ./services/api/app:/app
+      - ./services/api/app:/workspace/app
+      - ./shared:/shared
       - ./volumes/data:/data
       - ./volumes/models:/models
     ports:

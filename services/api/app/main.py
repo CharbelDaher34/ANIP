@@ -2,7 +2,7 @@
 FastAPI application for ANIP API service.
 """
 import sys
-sys.path.insert(0, '/workspace/../..')
+sys.path.insert(0, '/')
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse

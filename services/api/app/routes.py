@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from datetime import datetime
 
 # Import shared modules
-sys.path.insert(0, '/workspace/../..')
+sys.path.insert(0, '/')
 from shared.database import get_db_session
 from shared.models.news import NewsArticle
 
