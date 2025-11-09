@@ -1,0 +1,17 @@
+FROM apache/spark:4.0.0
+
+USER root
+
+# Install Python dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install required Python packages
+RUN pip3 install --no-cache-dir \
+    sqlalchemy==1.4.52 \
+    psycopg2-binary==2.9.9 \
+    python-dotenv==1.0.0
+
+USER spark
+

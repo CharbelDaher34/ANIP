@@ -16,10 +16,11 @@ services:
     image: postgres:16
     container_name: anip-postgres
     environment:
+      POSTGRES_DB: ${POSTGRES_DB:-anip}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_USER: ${POSTGRES_USER}
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - ./volumes/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -48,61 +49,42 @@ services:
       "
     <<: *default-networks
 
-  kafka:
-    image: confluentinc/cp-kafka:latest
-    hostname: kafka
-    container_name: anip-kafka
-    environment:
-      KAFKA_KRAFT_MODE: "true"
-      KAFKA_PROCESS_ROLES: controller,broker
-      KAFKA_NODE_ID: 1
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"  # For single-node setup
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1  # For single-node setup
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-    volumes:
-      - kafka-data:/var/lib/kafka/data
-    <<: *common-config
-
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: anip-kafka-ui
-    environment:
-      KAFKA_CLUSTERS_0_NAME: anip
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
-    ports:
-      - "${KAFKA_UI_PORT}:8080"
-    depends_on:
-      - kafka
-    <<: *common-config
-
   spark-master:
-    image: apache/spark:4.0.0
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
     container_name: spark-master
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     ports:
-      - "${SPARK_MASTER_RPC_PORT}:7077"
-      - "${SPARK_MASTER_WEB_PORT}:8080"
+      - "${SPARK_MASTER_RPC_PORT:-7077}:7077"
+      - "${SPARK_MASTER_WEB_PORT:-8080}:8080"
     environment:
       SPARK_RPC_AUTHENTICATION_ENABLED: "no"
       SPARK_RPC_ENCRYPTION_ENABLED: "no"
       SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
       SPARK_SSL_ENABLED: "no"
+      PYTHONPATH: "/opt/anip:$$PYTHONPATH"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-anip}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./volumes/data:/data
+      - ./spark:/opt/anip/spark
+      - ./shared:/opt/anip/shared
     <<: *common-config
 
   spark-worker:
-    image: apache/spark:4.0.0
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
     container_name: spark-worker
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     depends_on:
       - spark-master
     ports:
-      - "${SPARK_WORKER_WEB_PORT}:8081"
+      - "${SPARK_WORKER_WEB_PORT:-8081}:8081"
     environment:
       SPARK_WORKER_MEMORY: 2g
       SPARK_WORKER_CORES: 2
@@ -110,27 +92,34 @@ services:
       SPARK_RPC_ENCRYPTION_ENABLED: "no"
       SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
       SPARK_SSL_ENABLED: "no"
+      PYTHONPATH: "/opt/anip:$$PYTHONPATH"
     volumes:
       - ./volumes/data:/data
+      - ./spark:/opt/anip/spark
+      - ./shared:/opt/anip/shared
     <<: *common-config
 
   mlflow:
     build:
       context: ./services/mlflow
     container_name: anip-mlflow
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
     command: >
       mlflow server
       --backend-store-uri sqlite:////mlflow/mlflow.db
       --default-artifact-root /mlruns
       --host 0.0.0.0
-      --port ${MLFLOW_PORT}
+      --port 5000
     volumes:
       - ./volumes/mlruns:/mlruns
       - ./volumes/mlruns:/mlflow
     <<: *common-config
 
   airflow-init:
-    image: ${AIRFLOW_IMAGE}
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: anip-airflow-init
     depends_on:
       pg-init:
@@ -139,19 +128,30 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-apache-spark apache-airflow-providers-apache-kafka psycopg2-binary
-      AIRFLOW_UID: ${AIRFLOW_UID}
-    user: "${AIRFLOW_UID}:${AIRFLOW_GID}"
+      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-anip}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
+      GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
+    user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
     entrypoint: /bin/bash
-    command: -c "airflow db upgrade && airflow users create --role Admin --username admin --password admin --firstname Admin --lastname User --email admin@example.com"
+    command: -c "airflow db upgrade && airflow users create --role Admin --username admin --password admin --firstname Admin --lastname User --email admin@example.com || true"
     volumes:
-      - ./volumes/airflow/dags:/opt/airflow/dags
+      - ./dags:/opt/airflow/dags
+      - ./shared:/opt/airflow/shared
+      - ./scripts:/opt/airflow/scripts
       - ./volumes/airflow/logs:/opt/airflow/logs
       - ./volumes/airflow/plugins:/opt/airflow/plugins
     <<: *default-networks
 
   airflow-scheduler:
-    image: ${AIRFLOW_IMAGE}
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: anip-airflow-scheduler
     depends_on:
       airflow-init:
@@ -160,17 +160,29 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW_UID: ${AIRFLOW_UID}
-    user: "${AIRFLOW_UID}:${AIRFLOW_GID}"
+      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-anip}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
+      GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
+    user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
     command: ["airflow", "scheduler"]
     volumes:
-      - ./volumes/airflow/dags:/opt/airflow/dags
+      - ./dags:/opt/airflow/dags
+      - ./shared:/opt/airflow/shared
+      - ./scripts:/opt/airflow/scripts
       - ./volumes/airflow/logs:/opt/airflow/logs
       - ./volumes/airflow/plugins:/opt/airflow/plugins
     <<: *common-config
 
   airflow-webserver:
-    image: ${AIRFLOW_IMAGE}
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: anip-airflow-webserver
     depends_on:
       airflow-scheduler:
@@ -179,13 +191,23 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW_UID: ${AIRFLOW_UID}
-    user: "${AIRFLOW_UID}:${AIRFLOW_GID}"
+      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-anip}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
+      GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
+    user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
     ports:
-      - "8080:8080"
+      - "${AIRFLOW_WEB_PORT:-8080}:8080"
     command: ["airflow", "webserver"]
     volumes:
-      - ./volumes/airflow/dags:/opt/airflow/dags
+      - ./dags:/opt/airflow/dags
+      - ./shared:/opt/airflow/shared
+      - ./scripts:/opt/airflow/scripts
       - ./volumes/airflow/logs:/opt/airflow/logs
       - ./volumes/airflow/plugins:/opt/airflow/plugins
     <<: *common-config
@@ -198,14 +220,14 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      NEWSAPI_KEY: ${NEWSAPI_KEY}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-anip}
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
     volumes:
       - ./services/api/app:/app
       - ./volumes/data:/data
       - ./volumes/models:/models
     ports:
-      - "${API_PORT}:8000"
+      - "${API_PORT:-8000}:8000"
     <<: *common-config
 
 networks:

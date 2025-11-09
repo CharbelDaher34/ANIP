@@ -1,0 +1,28 @@
+FROM apache/airflow:2.9.3
+
+USER root
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+
+# Install Python dependencies
+RUN pip install --no-cache-dir \
+    apache-airflow-providers-apache-spark==4.1.3 \
+    apache-airflow-providers-apache-kafka==1.0.0 \
+    psycopg2-binary==2.9.9 \
+    python-dotenv==1.0.0 \
+    sqlalchemy==1.4.52 \
+    requests==2.31.0 \
+    newsapi-python==0.2.7
+
+# Set Python path
+ENV PYTHONPATH="${PYTHONPATH}:/opt/airflow"
+
+WORKDIR /opt/airflow
+
