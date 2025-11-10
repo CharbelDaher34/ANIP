@@ -73,6 +73,7 @@ services:
       - ./volumes/data:/data
       - ./spark:/opt/anip/spark
       - ./shared:/opt/anip/shared
+      - ./ml:/opt/anip/ml
     <<: *common-config
 
   spark-worker:
@@ -97,6 +98,7 @@ services:
       - ./volumes/data:/data
       - ./spark:/opt/anip/spark
       - ./shared:/opt/anip/shared
+      - ./ml:/opt/anip/ml
     <<: *common-config
 
   mlflow:
@@ -169,7 +171,7 @@ services:
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
       GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
-    user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
+    user: "root"
     command: ["airflow", "scheduler"]
     volumes:
       - ./dags:/opt/airflow/dags
@@ -177,6 +179,7 @@ services:
       - ./scripts:/opt/airflow/scripts
       - ./volumes/airflow/logs:/opt/airflow/logs
       - ./volumes/airflow/plugins:/opt/airflow/plugins
+      - /var/run/docker.sock:/var/run/docker.sock
     <<: *common-config
 
   airflow-webserver:
@@ -221,6 +224,11 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-anip}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-anip}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
     volumes:
       - ./services/api/app:/workspace/app

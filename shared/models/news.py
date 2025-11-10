@@ -15,9 +15,9 @@ class NewsArticle(Base):
     content = Column(Text)
     source = Column(String(200))
     author = Column(String(200))
-    url = Column(String(1000), unique=True, nullable=False)
+    url = Column(String(1000), unique=False, nullable=False)
     published_at = Column(DateTime)
-    language = Column(String(10), default='en')
+    language = Column(String(50), default='en')
     region = Column(String(100))
     
     # ML predictions

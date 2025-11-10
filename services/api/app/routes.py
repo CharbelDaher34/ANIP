@@ -276,3 +276,65 @@ async def get_source_stats(limit: int = Query(default=10, ge=1, le=50)):
             detail="Internal server error"
         )
 
+
+@router.get("/stats/missing-ml")
+async def get_missing_ml_stats():
+    """
+    Get statistics about articles missing ML predictions.
+    
+    Returns:
+        Counts of articles missing topic, sentiment, or embedding predictions.
+        Also includes total articles and articles missing any ML field.
+    """
+    from sqlalchemy import func, or_
+    
+    try:
+        with get_db_session() as session:
+            # Total articles
+            total_count = session.query(func.count(NewsArticle.id)).scalar()
+            
+            # Articles missing topic
+            missing_topic_count = session.query(func.count(NewsArticle.id)).filter(
+                NewsArticle.topic.is_(None)
+            ).scalar()
+            
+            # Articles missing sentiment
+            missing_sentiment_count = session.query(func.count(NewsArticle.id)).filter(
+                NewsArticle.sentiment.is_(None)
+            ).scalar()
+            
+            # Articles missing embedding
+            missing_embedding_count = session.query(func.count(NewsArticle.id)).filter(
+                NewsArticle.embedding.is_(None)
+            ).scalar()
+            
+            # Articles missing any ML field (topic OR sentiment OR embedding)
+            missing_any_count = session.query(func.count(NewsArticle.id)).filter(
+                or_(
+                    NewsArticle.topic.is_(None),
+                    NewsArticle.sentiment.is_(None),
+                    NewsArticle.embedding.is_(None)
+                )
+            ).scalar()
+            
+            return {
+                "total_articles": total_count,
+                "missing_topic": missing_topic_count,
+                "missing_sentiment": missing_sentiment_count,
+                "missing_embedding": missing_embedding_count,
+                "missing_any_ml_field": missing_any_count,
+                "complete_ml_predictions": total_count - missing_any_count if total_count else 0
+            }
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_missing_ml_stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error occurred"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in get_missing_ml_stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+

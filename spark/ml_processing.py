@@ -8,7 +8,6 @@ This module processes news articles using Apache Spark with ML models:
 """
 import os
 import sys
-import random
 from typing import List, Dict, Any
 
 # Add project root to path
@@ -30,87 +29,64 @@ def create_spark_session():
         .config("spark.sql.execution.arrow.pyspark.enabled", "false") \
         .getOrCreate()
 
-# ==================== ML Models (Simplified) ====================
+# ==================== Import ML Models ====================
 
-# Topic categories
-TOPICS = [
-    "Politics", "Business", "Technology", "Sports", "Entertainment",
-    "Health", "Science", "Environment", "Education", "World"
-]
+# Import models from ml folder
+from ml.classification import predict_topic
+from ml.sentiment import predict_sentiment
+from ml.embedding import generate_embedding as embedding_model
+
+# ==================== ML Model Wrapper Functions ====================
 
 def classify_topic(title: str, content: str) -> str:
     """
-    Classify article topic based on keywords.
-    Simplified keyword-based classification.
+    Classify article topic using ML model.
+    Returns the top predicted topic.
     """
-    text = (title + " " + content).lower()
+    text = f"{title} {content}"
+    result = predict_topic(text, top_k=1)
     
-    # Keyword-based classification
-    if any(word in text for word in ["election", "government", "politics", "congress", "senate"]):
-        return "Politics"
-    elif any(word in text for word in ["stock", "market", "economy", "business", "trade", "company"]):
-        return "Business"
-    elif any(word in text for word in ["tech", "ai", "software", "digital", "computer", "internet"]):
-        return "Technology"
-    elif any(word in text for word in ["game", "player", "team", "sport", "championship"]):
-        return "Sports"
-    elif any(word in text for word in ["movie", "music", "celebrity", "entertainment", "film"]):
-        return "Entertainment"
-    elif any(word in text for word in ["health", "medical", "disease", "hospital", "doctor"]):
-        return "Health"
-    elif any(word in text for word in ["science", "research", "study", "discovery"]):
-        return "Science"
-    elif any(word in text for word in ["climate", "environment", "pollution", "green"]):
-        return "Environment"
-    elif any(word in text for word in ["school", "education", "university", "student"]):
-        return "Education"
-    else:
-        return "World"
+    if result and "predictions" in result and len(result["predictions"]) > 0:
+        topic = result["predictions"][0]["topic"]
+        # Capitalize first letter to match expected format
+        return topic.capitalize()
+    
+    return "World"
 
 def analyze_sentiment(content: str) -> Dict[str, Any]:
     """
-    Analyze sentiment of article content.
-    Simplified keyword-based sentiment analysis.
+    Analyze sentiment of article content using ML model.
+    Returns sentiment label and score.
     """
-    text = content.lower()
+    result = predict_sentiment(content)
     
-    # Positive keywords
-    positive_words = ["good", "great", "excellent", "positive", "success", "win", "best", "happy"]
-    # Negative keywords
-    negative_words = ["bad", "terrible", "negative", "fail", "worst", "sad", "crisis"]
-    
-    pos_count = sum(1 for word in positive_words if word in text)
-    neg_count = sum(1 for word in negative_words if word in text)
-    
-    if pos_count > neg_count:
-        sentiment = "positive"
-        score = min(0.5 + (pos_count * 0.1), 1.0)
-    elif neg_count > pos_count:
-        sentiment = "negative"
-        score = max(0.5 - (neg_count * 0.1), 0.0)
-    else:
-        sentiment = "neutral"
-        score = 0.5
+    if result:
+        # Find the sentiment with highest score
+        scores = {
+            "positive": result.get("positive", 0.0),
+            "neutral": result.get("neutral", 0.0),
+            "negative": result.get("negative", 0.0)
+        }
+        sentiment = max(scores, key=scores.get)
+        score = scores[sentiment]
+        
+        return {
+            "sentiment": sentiment,
+            "score": float(score)
+        }
     
     return {
-        "sentiment": sentiment,
-        "score": float(score)
+        "sentiment": "neutral",
+        "score": 0.5
     }
 
 def generate_embedding(title: str, content: str) -> List[float]:
     """
-    Generate simple text embedding.
-    Simplified version - in production would use actual embedding model.
+    Generate text embedding using ML model.
+    Returns 384-dimensional embedding vector.
     """
-    # Simple hash-based embedding (512 dimensions)
-    text = title + " " + content
-    embedding = []
-    
-    for i in range(512):
-        # Simple deterministic "embedding" based on text hash
-        hash_val = hash(text + str(i)) % 1000
-        embedding.append(hash_val / 1000.0)
-    
+    text = f"{title} {content}"
+    embedding = embedding_model(text, dimension=384)
     return embedding
 
 # ==================== Spark UDFs ====================
@@ -139,17 +115,17 @@ def generate_embedding_udf(title: str, content: str) -> List[float]:
     """UDF wrapper for embedding generation."""
     try:
         if not title or not content:
-            return [0.0] * 512
+            return [0.0] * 384
         return generate_embedding(title, content)
     except Exception as e:
         print(f"Error in embedding generation: {e}")
-        return [0.0] * 512
+        return [0.0] * 384
 
 # ==================== Database Operations ====================
 
 def save_articles_to_db_sqlalchemy(df):
     """
-    Save processed articles back to database using SQLAlchemy.
+    Update existing articles with ML predictions using SQLAlchemy.
     Converts Spark DataFrame to Python dictionaries and uses db_utils.
     """
     # Collect data to driver (for small to medium datasets)
@@ -175,11 +151,11 @@ def save_articles_to_db_sqlalchemy(df):
         }
         articles_dicts.append(article_dict)
     
-    # Use db_utils to save
-    from shared.utils.db_utils import save_articles_batch
-    total_saved = save_articles_batch(articles_dicts)
+    # Use db_utils to update existing articles with ML predictions
+    from shared.utils.db_utils import update_articles_ml_predictions
+    total_updated = update_articles_ml_predictions(articles_dicts)
     
-    return total_saved
+    return total_updated
 
 # ==================== Main Processing Pipeline ====================
 
@@ -288,11 +264,11 @@ def load_from_database_and_process():
     print("\nBy Sentiment:")
     df.groupBy("sentiment").count().show()
     
-    # Save back to database using SQLAlchemy
-    print("\n💾 Saving ML predictions to database using SQLAlchemy...")
-    total_saved = save_articles_to_db_sqlalchemy(df)
+    # Update existing articles with ML predictions
+    print("\n💾 Updating articles with ML predictions in database...")
+    total_updated = save_articles_to_db_sqlalchemy(df)
     
-    print(f"\n✅ Successfully processed and saved {total_saved} articles")
+    print(f"\n✅ Successfully updated {total_updated} articles with ML predictions")
     
     spark.stop()
 

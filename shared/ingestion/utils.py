@@ -22,7 +22,7 @@ def clean_article_data(article: Dict[str, Any]) -> Dict[str, Any]:
         'author': article.get('author', 'Unknown')[:200],
         'url': article.get('url', '')[:1000],
         'published_at': article.get('published_at'),
-        'language': article.get('language', 'en')[:10],
+        'language': article.get('language', 'en')[:50],
         'region': article.get('region', 'US')[:100]
     }
 

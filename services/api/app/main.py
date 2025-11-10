@@ -4,6 +4,7 @@ FastAPI application for ANIP API service.
 import os
 import sys
 import logging
+from contextlib import asynccontextmanager
 sys.path.insert(0, '/')
 
 from fastapi import FastAPI, Request, status
@@ -13,6 +14,8 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 
 from app.routes import router as api_router
+from shared.database import Base, engine
+from shared.models.news import NewsArticle
 
 # Configure logging
 logging.basicConfig(
@@ -21,12 +24,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan event handler for FastAPI app.
+    Drops and recreates all database tables on startup.
+    """
+    logger.info("🚀 Starting ANIP API - Initializing database...")
+    
+    try:
+        # Drop all tables with CASCADE to handle foreign key dependencies
+        # logger.info("🗑️  Dropping all existing tables...")
+        # with engine.begin() as conn:
+        #     # Drop all tables with CASCADE to handle foreign key constraints
+        #     conn.execute(text("DROP SCHEMA public CASCADE"))
+        #     conn.execute(text("CREATE SCHEMA public"))
+        #     conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+        # logger.info("✅ All tables dropped successfully")
+        
+        # Create all tables
+        logger.info("📦 Creating database tables...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables created successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Error during database initialization: {e}", exc_info=True)
+        raise
+    
+    logger.info("✅ ANIP API startup complete")
+    
+    yield
+    
+    logger.info("🛑 Shutting down ANIP API...")
+
+
 app = FastAPI(
     title="ANIP API",
     description="Automated News Intelligence Pipeline API",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # Configure CORS - use environment variable for allowed origins
