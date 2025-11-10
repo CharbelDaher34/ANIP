@@ -70,7 +70,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - ./volumes/data:/data
       - ./spark:/opt/anip/spark
       - ./shared:/opt/anip/shared
       - ./ml:/opt/anip/ml
@@ -95,7 +94,6 @@ services:
       SPARK_SSL_ENABLED: "no"
       PYTHONPATH: "/opt/anip:$$PYTHONPATH"
     volumes:
-      - ./volumes/data:/data
       - ./spark:/opt/anip/spark
       - ./shared:/opt/anip/shared
       - ./ml:/opt/anip/ml
@@ -233,8 +231,6 @@ services:
     volumes:
       - ./services/api/app:/workspace/app
       - ./shared:/shared
-      - ./volumes/data:/data
-      - ./volumes/models:/models
     ports:
       - "${API_PORT:-8000}:8000"
     <<: *common-config
