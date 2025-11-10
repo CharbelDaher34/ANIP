@@ -2,18 +2,19 @@
 API routes for ANIP.
 """
 import sys
-sys.path.insert(0, '/workspace')
+import logging
+sys.path.insert(0, '/')
 
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from datetime import datetime
+from sqlalchemy.exc import SQLAlchemyError
 
-# Import shared modules
-sys.path.insert(0, '/')
 from shared.database import get_db_session
 from shared.models.news import NewsArticle
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["news"])
 
 
@@ -42,9 +43,9 @@ class ArticleResponse(BaseModel):
 async def get_articles(
     limit: int = Query(default=10, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    topic: Optional[str] = None,
-    sentiment: Optional[str] = None,
-    source: Optional[str] = None
+    topic: Optional[str] = Query(default=None, max_length=100),
+    sentiment: Optional[str] = Query(default=None, max_length=50),
+    source: Optional[str] = Query(default=None, max_length=200)
 ):
     """
     Get articles with optional filtering.
@@ -59,24 +60,51 @@ async def get_articles(
     Returns:
         List of articles
     """
-    with get_db_session() as session:
-        query = session.query(NewsArticle)
-        
-        # Apply filters
-        if topic:
-            query = query.filter(NewsArticle.topic == topic)
-        if sentiment:
-            query = query.filter(NewsArticle.sentiment == sentiment)
-        if source:
-            query = query.filter(NewsArticle.source == source)
-        
-        # Order by most recent first
-        query = query.order_by(NewsArticle.published_at.desc())
-        
-        # Apply pagination
-        articles = query.offset(offset).limit(limit).all()
-        
-        return articles
+    # Validate sentiment value if provided
+    valid_sentiments = {"positive", "negative", "neutral"}
+    if sentiment and sentiment.lower() not in valid_sentiments:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid sentiment. Must be one of: {', '.join(valid_sentiments)}"
+        )
+    
+    try:
+        with get_db_session() as session:
+            query = session.query(NewsArticle)
+            
+            # Apply filters (SQLAlchemy handles parameterization automatically)
+            if topic:
+                # Sanitize: strip whitespace and limit length
+                topic = topic.strip()[:100]
+                query = query.filter(NewsArticle.topic == topic)
+            if sentiment:
+                sentiment = sentiment.lower().strip()
+                query = query.filter(NewsArticle.sentiment == sentiment)
+            if source:
+                # Sanitize: strip whitespace and limit length
+                source = source.strip()[:200]
+                query = query.filter(NewsArticle.source == source)
+            
+            # Order by most recent first (handle NULL published_at)
+            from sqlalchemy import nullslast
+            query = query.order_by(nullslast(NewsArticle.published_at.desc()))
+            
+            # Apply pagination
+            articles = query.offset(offset).limit(limit).all()
+            
+            return articles
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_articles: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error occurred"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in get_articles: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
 
 
 @router.get("/articles/{article_id}", response_model=ArticleResponse)
@@ -90,13 +118,31 @@ async def get_article(article_id: int):
     Returns:
         Article details
     """
-    with get_db_session() as session:
-        article = session.query(NewsArticle).filter(NewsArticle.id == article_id).first()
-        
-        if not article:
-            raise HTTPException(status_code=404, detail="Article not found")
-        
-        return article
+    try:
+        with get_db_session() as session:
+            article = session.query(NewsArticle).filter(NewsArticle.id == article_id).first()
+            
+            if not article:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Article with ID {article_id} not found"
+                )
+            
+            return article
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_article: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error occurred"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in get_article: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
 
 
 @router.get("/stats/topics")
@@ -109,24 +155,37 @@ async def get_topic_stats():
     """
     from sqlalchemy import func
     
-    with get_db_session() as session:
-        stats = session.query(
-            NewsArticle.topic,
-            func.count(NewsArticle.id).label('count')
-        ).filter(
-            NewsArticle.topic.isnot(None)
-        ).group_by(
-            NewsArticle.topic
-        ).order_by(
-            func.count(NewsArticle.id).desc()
-        ).all()
-        
-        return {
-            "topics": [
-                {"topic": topic, "count": count}
-                for topic, count in stats
-            ]
-        }
+    try:
+        with get_db_session() as session:
+            stats = session.query(
+                NewsArticle.topic,
+                func.count(NewsArticle.id).label('count')
+            ).filter(
+                NewsArticle.topic.isnot(None)
+            ).group_by(
+                NewsArticle.topic
+            ).order_by(
+                func.count(NewsArticle.id).desc()
+            ).all()
+            
+            return {
+                "topics": [
+                    {"topic": topic, "count": count}
+                    for topic, count in stats
+                ]
+            }
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_topic_stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error occurred"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in get_topic_stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
 
 
 @router.get("/stats/sentiments")
@@ -139,24 +198,37 @@ async def get_sentiment_stats():
     """
     from sqlalchemy import func
     
-    with get_db_session() as session:
-        stats = session.query(
-            NewsArticle.sentiment,
-            func.count(NewsArticle.id).label('count')
-        ).filter(
-            NewsArticle.sentiment.isnot(None)
-        ).group_by(
-            NewsArticle.sentiment
-        ).order_by(
-            func.count(NewsArticle.id).desc()
-        ).all()
-        
-        return {
-            "sentiments": [
-                {"sentiment": sentiment, "count": count}
-                for sentiment, count in stats
-            ]
-        }
+    try:
+        with get_db_session() as session:
+            stats = session.query(
+                NewsArticle.sentiment,
+                func.count(NewsArticle.id).label('count')
+            ).filter(
+                NewsArticle.sentiment.isnot(None)
+            ).group_by(
+                NewsArticle.sentiment
+            ).order_by(
+                func.count(NewsArticle.id).desc()
+            ).all()
+            
+            return {
+                "sentiments": [
+                    {"sentiment": sentiment, "count": count}
+                    for sentiment, count in stats
+                ]
+            }
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_sentiment_stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error occurred"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in get_sentiment_stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
 
 
 @router.get("/stats/sources")
@@ -172,22 +244,35 @@ async def get_source_stats(limit: int = Query(default=10, ge=1, le=50)):
     """
     from sqlalchemy import func
     
-    with get_db_session() as session:
-        stats = session.query(
-            NewsArticle.source,
-            func.count(NewsArticle.id).label('count')
-        ).filter(
-            NewsArticle.source.isnot(None)
-        ).group_by(
-            NewsArticle.source
-        ).order_by(
-            func.count(NewsArticle.id).desc()
-        ).limit(limit).all()
-        
-        return {
-            "sources": [
-                {"source": source, "count": count}
-                for source, count in stats
-            ]
-        }
+    try:
+        with get_db_session() as session:
+            stats = session.query(
+                NewsArticle.source,
+                func.count(NewsArticle.id).label('count')
+            ).filter(
+                NewsArticle.source.isnot(None)
+            ).group_by(
+                NewsArticle.source
+            ).order_by(
+                func.count(NewsArticle.id).desc()
+            ).limit(limit).all()
+            
+            return {
+                "sources": [
+                    {"source": source, "count": count}
+                    for source, count in stats
+                ]
+            }
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_source_stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error occurred"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in get_source_stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
 

@@ -4,7 +4,7 @@ Pulls news articles from GDELT Project
 """
 import requests
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from shared.ingestion.base import BaseIngestor
 
 
@@ -44,7 +44,7 @@ class GDELTIngestor(BaseIngestor):
                 'author': None,
                 'url': item.get("url"),
                 'published_at': datetime.fromisoformat(item["seendate"][:8])
-                if item.get("seendate") else datetime.utcnow(),
+                if item.get("seendate") else datetime.now(timezone.utc),
                 'language': item.get("language", "en"),
                 'region': "WORLD"
             }

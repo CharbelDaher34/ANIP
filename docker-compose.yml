@@ -139,7 +139,7 @@ services:
       GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
     user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
     entrypoint: /bin/bash
-    command: -c "airflow db upgrade && airflow users create --role Admin --username admin --password admin --firstname Admin --lastname User --email admin@example.com || true"
+    command: -c "airflow db upgrade && airflow users create --role Admin --username ${AIRFLOW_ADMIN_USER:-admin} --password ${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --email ${AIRFLOW_ADMIN_EMAIL:-admin@example.com} || true"
     volumes:
       - ./dags:/opt/airflow/dags
       - ./shared:/opt/airflow/shared

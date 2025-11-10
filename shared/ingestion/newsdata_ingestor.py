@@ -4,7 +4,7 @@ Pulls news articles from NewsData.io
 """
 import requests
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from shared.ingestion.base import BaseIngestor
 
 
@@ -48,7 +48,7 @@ class NewsDataIngestor(BaseIngestor):
                 'author': item.get("creator", [None])[0] if item.get("creator") else None,
                 'url': item.get("link"),
                 'published_at': datetime.fromisoformat(item["pubDate"].replace("Z", "+00:00"))
-                if item.get("pubDate") else datetime.utcnow(),
+                if item.get("pubDate") else datetime.now(timezone.utc),
                 'language': item.get("language", "en"),
                 'region': country.upper()
             }

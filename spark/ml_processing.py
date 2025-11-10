@@ -197,9 +197,24 @@ def load_from_database_and_process():
         from sqlalchemy import create_engine, text
         
         # Create database connection string
-        db_url = f"postgresql+psycopg2://{os.getenv('POSTGRES_USER', 'anip')}:{os.getenv('POSTGRES_PASSWORD', 'anip_pw')}@{os.getenv('POSTGRES_HOST', 'postgres')}:{os.getenv('POSTGRES_PORT', '5432')}/{os.getenv('POSTGRES_DB', 'anip')}"
+        postgres_user = os.getenv('POSTGRES_USER')
+        postgres_password = os.getenv('POSTGRES_PASSWORD')
+        postgres_host = os.getenv('POSTGRES_HOST', 'postgres')
+        postgres_port = os.getenv('POSTGRES_PORT', '5432')
+        postgres_db = os.getenv('POSTGRES_DB', 'anip')
         
-        engine = create_engine(db_url)
+        if not postgres_user or not postgres_password:
+            raise ValueError("POSTGRES_USER and POSTGRES_PASSWORD environment variables are required")
+        
+        db_url = f"postgresql+psycopg2://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+        
+        # Create engine with connection pooling for better performance
+        engine = create_engine(
+            db_url,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True
+        )
         
         # Read articles that need ML processing
         query = text("""

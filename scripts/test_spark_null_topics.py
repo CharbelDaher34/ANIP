@@ -4,7 +4,7 @@ Used for testing the Spark ML processing pipeline.
 """
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 # Add project root to path
@@ -39,9 +39,9 @@ def nullify_ml_fields_for_articles(article_ids: List[int]):
                 article.sentiment = None
                 article.sentiment_score = None
                 article.embedding = None
-                article.updated_at = datetime.utcnow()
+                article.updated_at = datetime.now(timezone.utc)
                 session.add(article)
-        session.commit()
+        # Note: get_db_session context manager handles commit automatically
     print(f"\n✅ Successfully nullified {len(article_ids)} articles")
 
 def get_null_count():

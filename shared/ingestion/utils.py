@@ -1,7 +1,7 @@
 """
 Utility functions for ingestion.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 
@@ -10,7 +10,7 @@ def parse_datetime(dt_string: str) -> datetime:
     try:
         return datetime.fromisoformat(dt_string.replace("Z", "+00:00"))
     except Exception:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
 
 
 def clean_article_data(article: Dict[str, Any]) -> Dict[str, Any]:

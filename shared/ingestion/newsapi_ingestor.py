@@ -4,7 +4,7 @@ Pulls news articles from NewsAPI.org
 """
 import requests
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from shared.ingestion.base import BaseIngestor
 
 
@@ -48,7 +48,7 @@ class NewsAPIIngestor(BaseIngestor):
                 'author': item.get("author"),
                 'url': item.get("url"),
                 'published_at': datetime.fromisoformat(item["publishedAt"].replace("Z", "+00:00"))
-                if item.get("publishedAt") else datetime.utcnow(),
+                if item.get("publishedAt") else datetime.now(timezone.utc),
                 'language': "en",
                 'region': country.upper()
             }

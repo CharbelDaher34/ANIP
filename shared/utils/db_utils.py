@@ -1,10 +1,13 @@
 """
 Database utility functions for saving articles.
 """
+import logging
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from shared.database import get_db_session
 from shared.models.news import NewsArticle
+
+logger = logging.getLogger(__name__)
 
 def save_articles_batch(articles: List[Dict[str, Any]]) -> int:
     """
@@ -61,7 +64,7 @@ def save_articles_batch(articles: List[Dict[str, Any]]) -> int:
                         existing.summary = article_data.get('summary', existing.summary)
                     if 'keywords' in article_data:
                         existing.keywords = article_data.get('keywords', existing.keywords)
-                    existing.updated_at = datetime.utcnow()
+                    existing.updated_at = datetime.now(timezone.utc)
                     savepoint.commit()  # Commit this savepoint
                     print(f"✅ Updated article: {article_data.get('title', 'Unknown')[:50]}")
                     updated_count += 1
@@ -82,8 +85,8 @@ def save_articles_batch(articles: List[Dict[str, Any]]) -> int:
                         embedding=article_data.get('embedding'),
                         summary=article_data.get('summary'),
                         keywords=article_data.get('keywords'),
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow()
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc)
                     )
                     session.add(article)
                     savepoint.commit()  # Commit this savepoint
@@ -93,6 +96,7 @@ def save_articles_batch(articles: List[Dict[str, Any]]) -> int:
             except Exception as e:
                 savepoint.rollback()  # Rollback only this article, not the entire batch
                 skipped_count += 1
+                logger.warning(f"Skipped article due to error: {article_data.get('title', 'Unknown')[:50]} - {str(e)}")
                 print(f"⚠️  Skipped duplicate/error: {article_data.get('title', 'Unknown')[:50]}")
                 continue
     
