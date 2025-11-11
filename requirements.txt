@@ -7,3 +7,8 @@ pydantic==2.5.0
 fastapi==0.104.1
 uvicorn==0.24.0
 
+# MLflow and ML dependencies
+mlflow==2.16.0
+scikit-learn==1.5.0
+numpy==1.26.4
+scipy==1.13.0

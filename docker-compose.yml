@@ -64,6 +64,7 @@ services:
       SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
       SPARK_SSL_ENABLED: "no"
       PYTHONPATH: "/opt/anip:$$PYTHONPATH"
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: ${POSTGRES_DB:-anip}
@@ -73,6 +74,7 @@ services:
       - ./spark:/opt/anip/spark
       - ./shared:/opt/anip/shared
       - ./ml:/opt/anip/ml
+      - ./volumes/mlruns:/mlruns
     <<: *common-config
 
   spark-worker:
@@ -93,10 +95,12 @@ services:
       SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
       SPARK_SSL_ENABLED: "no"
       PYTHONPATH: "/opt/anip:$$PYTHONPATH"
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
     volumes:
       - ./spark:/opt/anip/spark
       - ./shared:/opt/anip/shared
       - ./ml:/opt/anip/ml
+      - ./volumes/mlruns:/mlruns
     <<: *common-config
 
   mlflow:
@@ -137,6 +141,7 @@ services:
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
       GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
     user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
     entrypoint: /bin/bash
     command: -c "airflow db upgrade && airflow users create --role Admin --username ${AIRFLOW_ADMIN_USER:-admin} --password ${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --email ${AIRFLOW_ADMIN_EMAIL:-admin@example.com} || true"
@@ -144,6 +149,8 @@ services:
       - ./dags:/opt/airflow/dags
       - ./shared:/opt/airflow/shared
       - ./scripts:/opt/airflow/scripts
+      - ./ml:/opt/anip/ml
+      - ./volumes/mlruns:/mlruns
       - ./volumes/airflow/logs:/opt/airflow/logs
       - ./volumes/airflow/plugins:/opt/airflow/plugins
     <<: *default-networks
@@ -169,12 +176,15 @@ services:
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
       GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
     user: "root"
     command: ["airflow", "scheduler"]
     volumes:
       - ./dags:/opt/airflow/dags
       - ./shared:/opt/airflow/shared
       - ./scripts:/opt/airflow/scripts
+      - ./ml:/opt/anip/ml
+      - ./volumes/mlruns:/mlruns
       - ./volumes/airflow/logs:/opt/airflow/logs
       - ./volumes/airflow/plugins:/opt/airflow/plugins
       - /var/run/docker.sock:/var/run/docker.sock
@@ -201,6 +211,7 @@ services:
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
       GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
     user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
     ports:
       - "${AIRFLOW_WEB_PORT:-8080}:8080"
@@ -209,6 +220,8 @@ services:
       - ./dags:/opt/airflow/dags
       - ./shared:/opt/airflow/shared
       - ./scripts:/opt/airflow/scripts
+      - ./ml:/opt/anip/ml
+      - ./volumes/mlruns:/mlruns
       - ./volumes/airflow/logs:/opt/airflow/logs
       - ./volumes/airflow/plugins:/opt/airflow/plugins
     <<: *common-config
