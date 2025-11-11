@@ -1,11 +1,8 @@
 """
 FastAPI application for ANIP API service.
 """
-import os
-import sys
 import logging
 from contextlib import asynccontextmanager
-sys.path.insert(0, '/')
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
@@ -14,8 +11,9 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 
 from app.routes import router as api_router
-from shared.database import Base, engine
-from shared.models.news import NewsArticle
+from anip.shared.database import Base, engine
+from anip.shared.models.news import NewsArticle
+from anip.config import settings
 
 # Configure logging
 logging.basicConfig(
@@ -68,8 +66,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS - use environment variable for allowed origins
-allowed_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+# Configure CORS - use pydantic settings for allowed origins
+allowed_origins = settings.api.cors_origins.split(",")
 if "*" in allowed_origins:
     logger.warning("CORS is configured to allow all origins. This should be restricted in production.")
 
@@ -120,7 +118,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    from shared.database import engine
+    from anip.shared.database import engine
     
     db_healthy = False
     db_error = None

@@ -1,26 +1,19 @@
 """
 Airflow DAG for NewsData.io data pipeline.
 """
-import os
-import sys
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-#load env variables
-from dotenv import load_dotenv
-load_dotenv()
-
-# Add shared module to path
-sys.path.insert(0, '/opt/airflow')
+from anip.config import settings
 
 def ingest_newsdata():
     """Ingest articles from NewsData.io."""
-    from shared.ingestion.newsdata_ingestor import NewsDataIngestor
-    from shared.utils.db_utils import save_articles_batch
+    from anip.shared.ingestion.newsdata_ingestor import NewsDataIngestor
+    from anip.shared.utils.db_utils import save_articles_batch
     
-    api_key = os.getenv('NEWSDATA_API_KEY')
+    api_key = settings.news_api.newsdata_api_key
     if not api_key:
-        raise ValueError("NEWSDATA_API_KEY environment variable not set")
+        raise ValueError("NEWSDATA_API_KEY not set in configuration")
     
     print("📰 Starting NewsData ingestion...")
     ingestor = NewsDataIngestor(api_key=api_key)

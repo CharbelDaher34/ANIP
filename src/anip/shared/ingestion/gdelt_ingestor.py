@@ -5,7 +5,7 @@ Pulls news articles from GDELT Project
 import requests
 from typing import List, Dict, Any
 from datetime import datetime, timezone
-from shared.ingestion.base import BaseIngestor
+from anip.shared.ingestion.base import BaseIngestor
 
 
 class GDELTIngestor(BaseIngestor):

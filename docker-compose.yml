@@ -11,6 +11,26 @@ x-common: &common-config
     - anip-net
   restart: unless-stopped
 
+# Common environment variables
+x-common-env: &common-env
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-anip}
+  POSTGRES_USER: ${POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  MLFLOW_TRACKING_URI: "http://mlflow:5000"
+
+x-airflow-env: &airflow-env
+  <<: *common-env
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+  AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+  NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+  NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
+  GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
+
+
 services:
   postgres:
     image: postgres:16
@@ -59,22 +79,15 @@ services:
       - "${SPARK_MASTER_RPC_PORT:-7077}:7077"
       - "${SPARK_MASTER_WEB_PORT:-8080}:8080"
     environment:
+      <<: *common-env
       SPARK_RPC_AUTHENTICATION_ENABLED: "no"
       SPARK_RPC_ENCRYPTION_ENABLED: "no"
       SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
       SPARK_SSL_ENABLED: "no"
-      PYTHONPATH: "/opt/anip:$$PYTHONPATH"
-      MLFLOW_TRACKING_URI: "http://mlflow:5000"
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-anip}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - ./spark:/opt/anip/spark
-      - ./shared:/opt/anip/shared
-      - ./ml:/opt/anip/ml
+      - ./src/anip:/opt/anip/src/anip:ro
       - ./volumes/mlruns:/mlruns
+      - ./spark:/opt/anip/spark:ro
     <<: *common-config
 
   spark-worker:
@@ -88,36 +101,42 @@ services:
     ports:
       - "${SPARK_WORKER_WEB_PORT:-8081}:8081"
     environment:
+      <<: *common-env
       SPARK_WORKER_MEMORY: 2g
       SPARK_WORKER_CORES: 2
       SPARK_RPC_AUTHENTICATION_ENABLED: "no"
       SPARK_RPC_ENCRYPTION_ENABLED: "no"
       SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
       SPARK_SSL_ENABLED: "no"
-      PYTHONPATH: "/opt/anip:$$PYTHONPATH"
-      MLFLOW_TRACKING_URI: "http://mlflow:5000"
     volumes:
-      - ./spark:/opt/anip/spark
-      - ./shared:/opt/anip/shared
-      - ./ml:/opt/anip/ml
+      - ./src/anip:/opt/anip/src/anip:ro
       - ./volumes/mlruns:/mlruns
+      - ./spark:/opt/anip/spark:ro
     <<: *common-config
 
   mlflow:
     build:
       context: ./services/mlflow
     container_name: anip-mlflow
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${MLFLOW_PORT:-5000}:5000"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-anip}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     command: >
       mlflow server
-      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       --default-artifact-root /mlruns
       --host 0.0.0.0
       --port 5000
     volumes:
       - ./volumes/mlruns:/mlruns
-      - ./volumes/mlruns:/mlflow
     <<: *common-config
 
   airflow-init:
@@ -129,28 +148,15 @@ services:
       pg-init:
         condition: service_completed_successfully
     environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-anip}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
-      NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
-      GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
-      MLFLOW_TRACKING_URI: "http://mlflow:5000"
+      <<: *airflow-env
     user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
     entrypoint: /bin/bash
     command: -c "airflow db upgrade && airflow users create --role Admin --username ${AIRFLOW_ADMIN_USER:-admin} --password ${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --email ${AIRFLOW_ADMIN_EMAIL:-admin@example.com} || true"
     volumes:
-      - ./dags:/opt/airflow/dags
-      - ./shared:/opt/airflow/shared
-      - ./scripts:/opt/airflow/scripts
-      - ./ml:/opt/anip/ml
+      - ./src/anip:/opt/anip/src/anip:ro
       - ./volumes/mlruns:/mlruns
+      - ./dags:/opt/airflow/dags:ro
+      - ./spark:/opt/anip/spark:ro
       - ./volumes/airflow/logs:/opt/airflow/logs
       - ./volumes/airflow/plugins:/opt/airflow/plugins
     <<: *default-networks
@@ -163,31 +169,20 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
+      spark-master:
+        condition: service_started
     environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-anip}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
-      NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
-      GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
-      MLFLOW_TRACKING_URI: "http://mlflow:5000"
-    user: "root"
+      <<: *airflow-env
+    user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
+    entrypoint: ["/opt/anip/scripts/airflow_entrypoint.sh"]
     command: ["airflow", "scheduler"]
     volumes:
-      - ./dags:/opt/airflow/dags
-      - ./shared:/opt/airflow/shared
-      - ./scripts:/opt/airflow/scripts
-      - ./ml:/opt/anip/ml
+      - ./src/anip:/opt/anip/src/anip:ro
       - ./volumes/mlruns:/mlruns
+      - ./dags:/opt/airflow/dags:ro
+      - ./spark:/opt/anip/spark:ro
       - ./volumes/airflow/logs:/opt/airflow/logs
       - ./volumes/airflow/plugins:/opt/airflow/plugins
-      - /var/run/docker.sock:/var/run/docker.sock
     <<: *common-config
 
   airflow-webserver:
@@ -199,51 +194,37 @@ services:
       airflow-scheduler:
         condition: service_started
     environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-anip}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
-      NEWSDATA_API_KEY: ${NEWSDATA_API_KEY:-}
-      GDELT_PROJECT_ID: ${GDELT_PROJECT_ID:-}
-      MLFLOW_TRACKING_URI: "http://mlflow:5000"
+      <<: *airflow-env
     user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}"
     ports:
       - "${AIRFLOW_WEB_PORT:-8080}:8080"
+    entrypoint: ["/opt/anip/scripts/airflow_entrypoint.sh"]
     command: ["airflow", "webserver"]
     volumes:
-      - ./dags:/opt/airflow/dags
-      - ./shared:/opt/airflow/shared
-      - ./scripts:/opt/airflow/scripts
-      - ./ml:/opt/anip/ml
+      - ./src/anip:/opt/anip/src/anip:ro
       - ./volumes/mlruns:/mlruns
+      - ./dags:/opt/airflow/dags:ro
+      - ./spark:/opt/anip/spark:ro
       - ./volumes/airflow/logs:/opt/airflow/logs
       - ./volumes/airflow/plugins:/opt/airflow/plugins
     <<: *common-config
 
   api:
     build:
-      context: ./services/api
+      context: .
+      dockerfile: services/api/Dockerfile
     container_name: anip-api
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-anip}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-anip}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      <<: *common-env
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
     volumes:
-      - ./services/api/app:/workspace/app
-      - ./shared:/shared
+      - ./src/anip:/opt/anip/src/anip:ro
+      - ./volumes/mlruns:/mlruns
+      - ./services/api/app:/opt/anip/services/api/app
     ports:
       - "${API_PORT:-8000}:8000"
     <<: *common-config

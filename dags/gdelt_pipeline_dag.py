@@ -1,19 +1,14 @@
 """
 Airflow DAG for GDELT data pipeline.
 """
-import os
-import sys
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-# Add shared module to path
-sys.path.insert(0, '/opt/airflow')
-
 def ingest_gdelt():
     """Ingest articles from GDELT."""
-    from shared.ingestion.gdelt_ingestor import GDELTIngestor
-    from shared.utils.db_utils import save_articles_batch
+    from anip.shared.ingestion.gdelt_ingestor import GDELTIngestor
+    from anip.shared.utils.db_utils import save_articles_batch
     
     print("📰 Starting GDELT ingestion...")
     ingestor = GDELTIngestor()

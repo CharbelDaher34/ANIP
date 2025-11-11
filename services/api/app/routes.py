@@ -1,18 +1,15 @@
 """
 API routes for ANIP.
 """
-import sys
 import logging
-sys.path.insert(0, '/')
-
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
 
-from shared.database import get_db_session
-from shared.models.news import NewsArticle
+from anip.shared.database import get_db_session
+from anip.shared.models.news import NewsArticle
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["news"])

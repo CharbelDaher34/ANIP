@@ -2,29 +2,37 @@ FROM apache/airflow:2.9.3
 
 USER root
 
-# Install system dependencies
+# Install system dependencies - Java needed for spark-submit
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     postgresql-client \
+    openjdk-17-jre-headless \
     && rm -rf /var/lib/apt/lists/*
+
+# Set Java home
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 USER airflow
 
-# Install Python dependencies
-RUN pip install --no-cache-dir \
-    psycopg2-binary==2.9.9 \
-    python-dotenv==1.0.0 \
-    sqlalchemy==1.4.52 \
-    requests==2.31.0 \
-    newsapi-python==0.2.7 \
-    mlflow==2.16.0 \
-    scikit-learn==1.5.0 \
-    numpy==1.26.4 \
-    scipy==1.13.0
+# Copy package files first (for better caching)
+COPY --chown=airflow:root pyproject.toml setup.py /opt/anip/
+COPY --chown=airflow:root src/ /opt/anip/src/
 
-# Set Python path to include project root
-ENV PYTHONPATH="${PYTHONPATH}:/opt/airflow:/opt/anip"
+# Install anip package with airflow extras
+WORKDIR /opt/anip
+RUN pip install --no-cache-dir -e ".[airflow,ml]"
+
+# Install Spark provider and PySpark client (lightweight - ~100MB vs ~500MB for full Spark)
+# IMPORTANT: PySpark version MUST match Spark cluster version (4.0.0)
+RUN pip install --no-cache-dir \
+    apache-airflow-providers-apache-spark==4.10.0 \
+    pyspark==4.0.0
+
+# Copy setup scripts
+COPY --chown=airflow:root scripts/setup_airflow_connections.py /opt/anip/scripts/
+COPY --chown=airflow:root scripts/airflow_entrypoint.sh /opt/anip/scripts/
+RUN chmod +x /opt/anip/scripts/airflow_entrypoint.sh
 
 WORKDIR /opt/airflow
 

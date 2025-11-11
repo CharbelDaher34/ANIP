@@ -4,8 +4,8 @@ Database utility functions for saving articles.
 import logging
 from typing import List, Dict, Any
 from datetime import datetime, timezone
-from shared.database import get_db_session
-from shared.models.news import NewsArticle
+from anip.shared.database import get_db_session
+from anip.shared.models.news import NewsArticle
 
 logger = logging.getLogger(__name__)
 

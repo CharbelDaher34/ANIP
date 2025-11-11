@@ -3,7 +3,7 @@ News article data model.
 """
 from sqlalchemy import Column, Integer, String, Text, DateTime, Float, ARRAY
 from sqlalchemy.sql import func
-from shared.database import Base
+from anip.shared.database import Base
 
 class NewsArticle(Base):
     """News article model."""
@@ -35,5 +35,18 @@ class NewsArticle(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     
     def __repr__(self):
-        return f"<NewsArticle(id={self.id}, title='{self.title[:50]}...', source='{self.source}')>"
+        """Safe repr that works even when detached from session."""
+        try:
+            # Access __dict__ directly to avoid lazy loading
+            id_val = self.__dict__.get('id', 'unknown')
+            title_val = self.__dict__.get('title', 'unknown')
+            source_val = self.__dict__.get('source', 'unknown')
+            
+            if title_val and title_val != 'unknown':
+                title_val = title_val[:50] + '...' if len(title_val) > 50 else title_val
+            
+            return f"<NewsArticle(id={id_val}, title='{title_val}', source='{source_val}')>"
+        except Exception:
+            # Fallback if even __dict__ access fails
+            return f"<NewsArticle at {hex(id(self))}>"
 

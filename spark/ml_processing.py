@@ -6,16 +6,12 @@ This module processes news articles using Apache Spark with ML models:
 - Sentiment analysis  
 - Embedding generation
 """
-import os
-import sys
 from typing import List, Dict, Any
-
-# Add project root to path
-sys.path.insert(0, '/opt/anip')
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf, col
 from pyspark.sql.types import StringType, FloatType, ArrayType, StructType, StructField
+from anip.config import settings
 
 # ==================== Spark Session ====================
 
@@ -31,10 +27,10 @@ def create_spark_session():
 
 # ==================== Import ML Models ====================
 
-# Import models from ml folder
-from ml.classification import predict_topic
-from ml.sentiment import predict_sentiment
-from ml.embedding import generate_embedding as embedding_model
+# Import models from anip package
+from anip.ml.classification.inference import predict_topic
+from anip.ml.sentiment.inference import predict_sentiment
+from anip.ml.embedding import generate_embedding as embedding_model
 
 # ==================== ML Model Wrapper Functions ====================
 
@@ -152,7 +148,7 @@ def save_articles_to_db_sqlalchemy(df):
         articles_dicts.append(article_dict)
     
     # Use db_utils to update existing articles with ML predictions
-    from shared.utils.db_utils import update_articles_ml_predictions
+    from anip.shared.utils.db_utils import update_articles_ml_predictions
     total_updated = update_articles_ml_predictions(articles_dicts)
     
     return total_updated
@@ -172,17 +168,8 @@ def load_from_database_and_process():
     try:
         from sqlalchemy import create_engine, text
         
-        # Create database connection string
-        postgres_user = os.getenv('POSTGRES_USER')
-        postgres_password = os.getenv('POSTGRES_PASSWORD')
-        postgres_host = os.getenv('POSTGRES_HOST', 'postgres')
-        postgres_port = os.getenv('POSTGRES_PORT', '5432')
-        postgres_db = os.getenv('POSTGRES_DB', 'anip')
-        
-        if not postgres_user or not postgres_password:
-            raise ValueError("POSTGRES_USER and POSTGRES_PASSWORD environment variables are required")
-        
-        db_url = f"postgresql+psycopg2://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+        # Use pydantic settings for database connection
+        db_url = settings.database.url
         
         # Create engine with connection pooling for better performance
         engine = create_engine(

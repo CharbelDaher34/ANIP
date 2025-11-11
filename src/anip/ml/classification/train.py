@@ -2,13 +2,13 @@
 Topic Classification Training Script with MLflow Integration.
 """
 
-import os
 import random
 from typing import List, Tuple
 import mlflow
 import mlflow.sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, f1_score
+from anip.config import settings
 
 from .model import create_classification_model, TOPICS
 
@@ -97,8 +97,9 @@ def train_and_evaluate(
     
     print(f"🔀 Train: {len(X_train)}, Test: {len(X_test)}")
     
-    # Set MLflow tracking
-    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    # Set MLflow tracking (use provided URI or default from settings)
+    tracking_uri = mlflow_tracking_uri or settings.mlflow.tracking_uri
+    mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(experiment_name)
     
     # Start MLflow run

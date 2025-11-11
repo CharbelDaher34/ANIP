@@ -6,11 +6,11 @@ This DAG runs the Spark ML processing job that:
 - Applies ML transformations (topic classification, sentiment analysis, embedding generation)
 - Saves the results back to the database
 """
-import os
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+from anip.config import settings
 
 # Default args for the DAG
 default_args = {
@@ -38,22 +38,10 @@ def check_articles_to_process():
     Check if there are articles that need ML processing.
     Returns True if there are articles to process, False otherwise.
     """
-    import sys
-    sys.path.insert(0, '/opt/airflow')
-    
     from sqlalchemy import create_engine, text
     
-    # Get database connection details from environment
-    postgres_user = os.getenv('POSTGRES_USER')
-    postgres_password = os.getenv('POSTGRES_PASSWORD')
-    postgres_host = os.getenv('POSTGRES_HOST', 'postgres')
-    postgres_port = os.getenv('POSTGRES_PORT', '5432')
-    postgres_db = os.getenv('POSTGRES_DB', 'anip')
-    
-    if not postgres_user or not postgres_password:
-        raise ValueError("POSTGRES_USER and POSTGRES_PASSWORD environment variables are required")
-    
-    db_url = f"postgresql+psycopg2://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
+    # Use pydantic settings for database connection
+    db_url = settings.database.url
     engine = create_engine(db_url)
     
     # Check for articles that need ML processing
@@ -83,18 +71,26 @@ check_task = PythonOperator(
     dag=dag,
 )
 
-# Spark task using docker exec
-spark_ml_task = BashOperator(
+# Spark task using SparkSubmitOperator
+spark_ml_task = SparkSubmitOperator(
     task_id='spark_ml_processing',
-    bash_command='''
-    docker exec spark-master /opt/spark/bin/spark-submit \
-        --master spark://spark-master:7077 \
-        --conf spark.executor.memory=2g \
-        --conf spark.driver.memory=2g \
-        --conf spark.sql.execution.arrow.pyspark.enabled=false \
-        --name anip-ml-processing \
-        /opt/anip/spark/ml_processing.py
-    ''',
+    application='/opt/anip/spark/ml_processing.py',
+    conn_id='spark_default',
+    conf={
+        'spark.executor.memory': '2g',
+        'spark.driver.memory': '2g',
+        'spark.sql.execution.arrow.pyspark.enabled': 'false',
+    },
+    env_vars={
+        'POSTGRES_HOST': settings.database.host,
+        'POSTGRES_PORT': str(settings.database.port),
+        'POSTGRES_DB': settings.database.db,
+        'POSTGRES_USER': settings.database.user,
+        'POSTGRES_PASSWORD': settings.database.password,
+        'MLFLOW_TRACKING_URI': settings.mlflow.tracking_uri,
+    },
+    name='anip-ml-processing',
+    verbose=True,
     dag=dag,
 )
 

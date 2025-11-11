@@ -8,14 +8,10 @@ This DAG orchestrates:
 4. Promoting best models to production
 """
 
-import sys
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-
-# Add project root to path (redundant if PYTHONPATH is set, but safe)
-if '/opt/anip' not in sys.path:
-    sys.path.insert(0, '/opt/anip')
+from anip.config import settings
 
 
 # ==================== Default Args ====================
@@ -35,7 +31,7 @@ default_args = {
 
 def train_classification_model(**context):
     """Train topic classification model with custom dataset."""
-    from ml.classification.train import train_and_evaluate, generate_mock_dataset
+    from anip.ml.classification.train import train_and_evaluate, generate_mock_dataset
     
     print("🚀 Starting classification model training...")
     
@@ -43,7 +39,7 @@ def train_classification_model(**context):
     dataset = generate_mock_dataset(n_samples=2000)
     
     # Option 2: Load from database/file (uncomment to use)
-    # from shared.utils.db_utils import fetch_training_data
+    # from anip.shared.utils.db_utils import fetch_training_data
     # texts, labels = fetch_training_data(task='classification')
     # dataset = (texts, labels)
     
@@ -52,7 +48,7 @@ def train_classification_model(**context):
         dataset=dataset,
         test_size=0.2,
         random_state=42,
-        mlflow_tracking_uri="http://mlflow:5000",
+        mlflow_tracking_uri=settings.mlflow.tracking_uri,
         experiment_name="topic-classification"
     )
     
@@ -66,7 +62,7 @@ def train_classification_model(**context):
 
 def train_sentiment_model(**context):
     """Train sentiment analysis model with custom dataset."""
-    from ml.sentiment.train import train_and_evaluate, generate_mock_dataset
+    from anip.ml.sentiment.train import train_and_evaluate, generate_mock_dataset
     
     print("🚀 Starting sentiment model training...")
     
@@ -74,7 +70,7 @@ def train_sentiment_model(**context):
     dataset = generate_mock_dataset(n_samples=2000)
     
     # Option 2: Load from database/file (uncomment to use)
-    # from shared.utils.db_utils import fetch_training_data
+    # from anip.shared.utils.db_utils import fetch_training_data
     # texts, labels = fetch_training_data(task='sentiment')
     # dataset = (texts, labels)
     
@@ -83,7 +79,7 @@ def train_sentiment_model(**context):
         dataset=dataset,
         test_size=0.2,
         random_state=42,
-        mlflow_tracking_uri="http://mlflow:5000",
+        mlflow_tracking_uri=settings.mlflow.tracking_uri,
         experiment_name="sentiment-analysis"
     )
     
@@ -103,7 +99,7 @@ def promote_best_models(**context):
     import mlflow
     from mlflow.tracking import MlflowClient
     
-    mlflow.set_tracking_uri("http://mlflow:5000")
+    mlflow.set_tracking_uri(settings.mlflow.tracking_uri)
     client = MlflowClient()
     
     # Get training results from XCom
@@ -195,18 +191,24 @@ def promote_best_models(**context):
 
 def reload_models_in_inference():
     """
-    Reload models in inference services to use newly promoted models.
+    Placeholder task - models are lazy-loaded on first use.
+    
+    In production, you would:
+    1. Send a signal to your API service to reload models
+    2. Make an HTTP request to an API endpoint that triggers reload
+    3. Use a message queue (Redis, RabbitMQ) to notify services
+    
+    For now, this just logs that models are promoted and ready.
     """
-    from ml.classification.inference import reload_model as reload_classification
-    from ml.sentiment.inference import reload_model as reload_sentiment
+    print("✅ Models promoted to Production and ready for use")
+    print("   Models will be lazy-loaded on first prediction request")
+    print("   ")
+    print("   In production, consider:")
+    print("   - HTTP endpoint: POST /api/admin/reload-models")
+    print("   - Message queue: Publish 'model-updated' event")
+    print("   - Service mesh: Rolling restart with health checks")
     
-    print("🔄 Reloading classification model...")
-    reload_classification()
-    
-    print("🔄 Reloading sentiment model...")
-    reload_sentiment()
-    
-    print("✅ Models reloaded in inference services")
+    return {"status": "models_ready", "action": "none"}
 
 
 # ==================== DAG Definition ====================
