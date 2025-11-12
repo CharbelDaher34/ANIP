@@ -10,7 +10,7 @@ from typing import List, Dict, Any
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf, col
-from pyspark.sql.types import StringType, FloatType, ArrayType, StructType, StructField
+from pyspark.sql.types import StringType, FloatType, ArrayType, StructType, StructField, IntegerType, TimestampType
 from anip.config import settings
 
 # ==================== Spark Session ====================
@@ -197,23 +197,36 @@ def load_from_database_and_process():
         
         print(f"📊 Found {len(rows)} articles to process")
         
-        # Convert rows to list of dictionaries for Spark DataFrame
+        # Define explicit schema for Spark DataFrame
+        schema = StructType([
+            StructField("id", IntegerType(), False),
+            StructField("title", StringType(), False),
+            StructField("content", StringType(), False),
+            StructField("source", StringType(), False),
+            StructField("author", StringType(), True),
+            StructField("url", StringType(), False),
+            StructField("published_at", TimestampType(), True),
+            StructField("language", StringType(), False),
+            StructField("region", StringType(), True)
+        ])
+        
+        # Convert rows to list of tuples matching the schema
         articles_data = []
         for row in rows:
-            articles_data.append({
-                'id': row[0],
-                'title': row[1] or '',
-                'content': row[2] or '',
-                'source': row[3] or '',
-                'author': row[4],
-                'url': row[5] or '',
-                'published_at': row[6],
-                'language': row[7] or 'en',
-                'region': row[8]
-            })
+            articles_data.append((
+                int(row[0]),
+                str(row[1] or ''),
+                str(row[2] or ''),
+                str(row[3] or ''),
+                row[4],  # author can be None
+                str(row[5] or ''),
+                row[6],  # published_at datetime
+                str(row[7] or 'en'),
+                row[8]   # region can be None
+            ))
         
-        # Create Spark DataFrame from list of dictionaries
-        df = spark.createDataFrame(articles_data)
+        # Create Spark DataFrame with explicit schema
+        df = spark.createDataFrame(articles_data, schema=schema)
             
     except Exception as e:
         print(f"❌ Error reading from database: {e}")

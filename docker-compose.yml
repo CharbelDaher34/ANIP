@@ -159,12 +159,11 @@ services:
       - "${CLASSIFICATION_SERVING_PORT:-5001}:5001"
     environment:
       <<: *common-env
-    command: >
-      mlflow models serve
-      --model-uri models:/topic-classification/Production
-      --host 0.0.0.0
-      --port 5001
-      --no-conda
+      MODEL_URI: "models:/topic-classification/Production"
+      MODEL_NAME: "topic-classification"
+      HOST: "0.0.0.0"
+      PORT: "5001"
+    command: python /mlflow/model_server.py
     volumes:
       - ./volumes/mlruns:/mlruns
       - ./src/anip:/opt/anip/src/anip:ro
@@ -186,12 +185,11 @@ services:
       - "${SENTIMENT_SERVING_PORT:-5002}:5002"
     environment:
       <<: *common-env
-    command: >
-      mlflow models serve
-      --model-uri models:/sentiment-analysis/Production
-      --host 0.0.0.0
-      --port 5002
-      --no-conda
+      MODEL_URI: "models:/sentiment-analysis/Production"
+      MODEL_NAME: "sentiment-analysis"
+      HOST: "0.0.0.0"
+      PORT: "5002"
+    command: python /mlflow/model_server.py
     volumes:
       - ./volumes/mlruns:/mlruns
       - ./src/anip:/opt/anip/src/anip:ro

@@ -116,7 +116,6 @@ def promote_best_models(**context):
     if classification_results and classification_results['accuracy'] >= ACCURACY_THRESHOLD:
         try:
             run_id = classification_results['run_id']
-            model_uri = f"runs:/{run_id}/model"
             
             # Register or update model version
             model_name = "topic-classification"
@@ -151,7 +150,6 @@ def promote_best_models(**context):
     if sentiment_results and sentiment_results['accuracy'] >= ACCURACY_THRESHOLD:
         try:
             run_id = sentiment_results['run_id']
-            model_uri = f"runs:/{run_id}/model"
             
             model_name = "sentiment-analysis"
             
@@ -191,24 +189,94 @@ def promote_best_models(**context):
 
 def reload_models_in_inference():
     """
-    Placeholder task - models are lazy-loaded on first use.
+    Trigger model reload in serving containers via HTTP endpoint.
     
-    In production, you would:
-    1. Send a signal to your API service to reload models
-    2. Make an HTTP request to an API endpoint that triggers reload
-    3. Use a message queue (Redis, RabbitMQ) to notify services
-    
-    For now, this just logs that models are promoted and ready.
+    When models are promoted to Production stage, this function calls
+    the /reload endpoint on each model serving container to hot-reload
+    the new Production model without restarting the container.
     """
-    print("✅ Models promoted to Production and ready for use")
-    print("   Models will be lazy-loaded on first prediction request")
-    print("   ")
-    print("   In production, consider:")
-    print("   - HTTP endpoint: POST /api/admin/reload-models")
-    print("   - Message queue: Publish 'model-updated' event")
-    print("   - Service mesh: Rolling restart with health checks")
+    import requests
+    import os
     
-    return {"status": "models_ready", "action": "none"}
+    print("🔄 Triggering model reload in serving containers...")
+    
+    # Get serving URLs from environment
+    classification_url = os.getenv(
+        "CLASSIFICATION_SERVING_URL",
+        "http://model-serving-classification:5001"
+    )
+    sentiment_url = os.getenv(
+        "SENTIMENT_SERVING_URL", 
+        "http://model-serving-sentiment:5002"
+    )
+    
+    # Define models to reload
+    models = [
+        ("classification", f"{classification_url}/reload"),
+        ("sentiment", f"{sentiment_url}/reload")
+    ]
+    
+    reloaded = []
+    failed = []
+    
+    for model_name, reload_url in models:
+        try:
+            print(f"   Reloading {model_name} model...")
+            
+            # Call reload endpoint
+            response = requests.post(
+                reload_url,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                reloaded.append(model_name)
+                result = response.json()
+                print(f"   ✅ {model_name} model reloaded: {result.get('message')}")
+            else:
+                failed.append(f"{model_name}: HTTP {response.status_code}")
+                print(f"   ⚠️ Failed to reload {model_name}: HTTP {response.status_code}")
+                print(f"      Response: {response.text}")
+                
+        except requests.exceptions.ConnectionError as e:
+            failed.append(f"{model_name}: Connection error")
+            print(f"   ⚠️ Cannot connect to {model_name} service at {reload_url}")
+            print(f"      Error: {e}")
+            
+        except requests.exceptions.Timeout:
+            failed.append(f"{model_name}: Timeout")
+            print(f"   ⚠️ Timeout reloading {model_name} model")
+            
+        except Exception as e:
+            failed.append(f"{model_name}: {str(e)}")
+            print(f"   ⚠️ Error reloading {model_name}: {e}")
+    
+    # Summary
+    if len(reloaded) == len(models):
+        print(f"\n✅ Successfully reloaded all {len(reloaded)} models")
+        print("   New Production models are now loaded and ready for inference")
+        return {
+            "status": "success",
+            "reloaded": reloaded,
+            "failed": []
+        }
+    elif reloaded:
+        print(f"\n⚠️ Partially successful: {len(reloaded)}/{len(models)} models reloaded")
+        print(f"   Reloaded: {', '.join(reloaded)}")
+        print(f"   Failed: {', '.join(failed)}")
+        return {
+            "status": "partial",
+            "reloaded": reloaded,
+            "failed": failed
+        }
+    else:
+        print("\n❌ Failed to reload any models")
+        print(f"   Errors: {', '.join(failed)}")
+        return {
+            "status": "failed",
+            "reloaded": [],
+            "failed": failed
+        }
 
 
 # ==================== DAG Definition ====================
