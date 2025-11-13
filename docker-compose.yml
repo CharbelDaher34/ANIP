@@ -19,6 +19,7 @@ x-common-env: &common-env
   POSTGRES_USER: ${POSTGRES_USER}
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
   MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  EMBEDDING_SERVICE_URL: "http://embedding-service:5003"
 
 x-airflow-env: &airflow-env
   <<: *common-env
@@ -209,6 +210,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    <<: *common-config
+
+  embedding-service:
+    build:
+      context: ./services/embedding
+    container_name: anip-embedding-service
+    ports:
+      - "${EMBEDDING_SERVICE_PORT:-5003}:5003"
+    environment:
+      PYTHONUNBUFFERED: "1"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5003/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     <<: *common-config
 
   airflow-init:

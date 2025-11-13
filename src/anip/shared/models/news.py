@@ -3,6 +3,7 @@ News article data model.
 """
 from sqlalchemy import Column, Integer, String, Text, DateTime, Float, ARRAY
 from sqlalchemy.sql import func
+from pgvector.sqlalchemy import Vector
 from anip.shared.database import Base
 
 class NewsArticle(Base):
@@ -25,7 +26,7 @@ class NewsArticle(Base):
     topic = Column(String(100))
     sentiment = Column(String(50))
     sentiment_score = Column(Float)
-    embedding = Column(ARRAY(Float))
+    embedding = Column(Vector(384))  # 384 dimensions for all-MiniLM-L6-v2
     
     # Additional fields
     summary = Column(Text)

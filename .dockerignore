@@ -49,3 +49,8 @@ LICENSE
 # MacOS
 .DS_Store
 
+.venv/
+*.venv/
+venv/
+env/
+ENV/

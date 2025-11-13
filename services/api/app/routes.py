@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from anip.shared.database import get_db_session
 from anip.shared.models.news import NewsArticle
+from anip.ml.embedding import generate_embedding
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["news"])
@@ -32,6 +33,22 @@ class ArticleResponse(BaseModel):
     sentiment_score: Optional[float]
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SimilarArticleResponse(BaseModel):
+    """Similar article response with similarity score."""
+    id: int
+    title: str
+    content: Optional[str]
+    source: Optional[str]
+    url: str
+    published_at: Optional[datetime]
+    topic: Optional[str]
+    sentiment: Optional[str]
+    similarity_score: float
 
     class Config:
         from_attributes = True
@@ -321,6 +338,92 @@ async def get_api_source_stats():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
+        )
+
+
+@router.get("/search/similar", response_model=List[SimilarArticleResponse])
+async def search_similar_articles(
+    question: str = Query(..., min_length=1, max_length=500, description="Question or text to find similar articles for"),
+    limit: int = Query(default=2, ge=1, le=10, description="Number of similar articles to return")
+):
+    """
+    Find similar articles using vector similarity search.
+    
+    This endpoint uses cosine similarity on article embeddings to find
+    the most relevant articles to a given question or text query.
+    
+    Args:
+        question: Question or text to search for similar articles
+        limit: Number of similar articles to return (1-10, default: 2)
+    
+    Returns:
+        List of similar articles with similarity scores
+    """
+    try:
+        # Generate embedding for the question
+        logger.info(f"Generating embedding for question: {question[:100]}...")
+        question_embedding = generate_embedding(question)
+        
+        with get_db_session() as session:
+            # pgvector supports passing Python lists directly to distance operators
+            # Calculate cosine distance using the <=> operator
+            distance = NewsArticle.embedding.cosine_distance(question_embedding)
+            
+            # Query articles using SQLAlchemy ORM
+            # Order by distance (smallest distance = most similar)
+            results = session.query(
+                NewsArticle,
+                distance.label('distance')
+            ).filter(
+                NewsArticle.embedding.isnot(None)
+            ).order_by(
+                distance
+            ).limit(limit).all()
+            
+            if not results:
+                logger.warning("No articles with embeddings found in database")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No articles with embeddings found. Please wait for ML processing to complete."
+                )
+            
+            # Convert to response with similarity scores
+            # Cosine distance range is [0, 2], so similarity is [0, 1]
+            similar_articles = []
+            for article, dist in results:
+                # Ensure distance is in valid range [0, 2]
+                dist = float(dist) if dist is not None else 1.0
+                dist = max(0.0, min(2.0, dist))
+                similarity = 1.0 - (dist / 2.0)
+                
+                similar_articles.append({
+                    "id": article.id,
+                    "title": article.title,
+                    "content": article.content,
+                    "source": article.source,
+                    "url": article.url,
+                    "published_at": article.published_at,
+                    "topic": article.topic,
+                    "sentiment": article.sentiment,
+                    "similarity_score": round(similarity, 4)
+                })
+            
+            logger.info(f"Found {len(similar_articles)} similar articles")
+            return similar_articles
+            
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in search_similar_articles: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error occurred"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in search_similar_articles: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
         )
 
 
