@@ -85,6 +85,7 @@ class GDELTIngestor(BaseIngestor):
             "published_at": self._parse_gdelt_date(item.get("seendate")),
             "language": normalize_language_code(item.get("language", "en")),
             "region": normalize_country_code(item.get("sourcecountry", "WORLD")),
+            "api_source": "gdelt",
         }
 
     # -----------------------------------------------------------

@@ -19,6 +19,7 @@ class NewsArticle(Base):
     published_at = Column(DateTime)
     language = Column(String(50), default='en')
     region = Column(String(100))
+    api_source = Column(String(50))  # Which API was used (newsapi, newsdata, gdelt, etc.)
     
     # ML predictions
     topic = Column(String(100))

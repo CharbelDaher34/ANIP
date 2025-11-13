@@ -67,7 +67,8 @@ class WorldNewsAPIIngestor(BaseIngestor):
                 'url': item.get("url"),
                 'published_at': published_at,
                 'language': item.get("language", "en"),
-                'region': item.get("source_country", "world").upper()
+                'region': item.get("source_country", "world").upper(),
+                'api_source': 'worldnewsapi',
             }
             articles.append(article)
 

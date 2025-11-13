@@ -87,7 +87,8 @@ class MediastackIngestor(BaseIngestor):
                 'url': item.get("url"),
                 'published_at': published_at,
                 'language': item.get("language", "en"),
-                'region': item.get("country", "us").upper()
+                'region': item.get("country", "us").upper(),
+                'api_source': 'mediastack',
             }
             articles.append(article)
 

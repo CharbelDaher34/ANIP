@@ -64,7 +64,8 @@ class TheNewsAPIIngestor(BaseIngestor):
                 'url': item.get("url"),
                 'published_at': published_at,
                 'language': item.get("language", "en"),
-                'region': locale.upper()
+                'region': locale.upper(),
+                'api_source': 'thenewsapi',
             }
             articles.append(article)
 

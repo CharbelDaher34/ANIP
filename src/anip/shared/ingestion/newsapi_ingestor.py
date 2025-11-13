@@ -66,6 +66,7 @@ class NewsAPIIngestor(BaseIngestor):
                 ) if item.get("publishedAt") else datetime.now(timezone.utc),
                 "language": item.get("language", "en"),
                 "region": "GLOBAL",
+                "api_source": "newsapi",
             }
             articles.append(article)
 

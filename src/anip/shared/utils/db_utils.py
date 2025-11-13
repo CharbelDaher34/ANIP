@@ -46,6 +46,7 @@ def save_articles_batch(articles: List[Dict[str, Any]]) -> int:
                     published_at=article_data.get('published_at'),
                     language=article_data.get('language', 'en'),
                     region=article_data.get('region'),
+                    api_source=article_data.get('api_source'),
                     topic=article_data.get('topic'),
                     sentiment=article_data.get('sentiment'),
                     sentiment_score=article_data.get('sentiment_score'),

@@ -26,6 +26,7 @@ class ArticleResponse(BaseModel):
     published_at: Optional[datetime]
     language: Optional[str]
     region: Optional[str]
+    api_source: Optional[str]
     topic: Optional[str]
     sentiment: Optional[str]
     sentiment_score: Optional[float]
@@ -42,7 +43,8 @@ async def get_articles(
     offset: int = Query(default=0, ge=0),
     topic: Optional[str] = Query(default=None, max_length=100),
     sentiment: Optional[str] = Query(default=None, max_length=50),
-    source: Optional[str] = Query(default=None, max_length=200)
+    source: Optional[str] = Query(default=None, max_length=200),
+    api_source: Optional[str] = Query(default=None, max_length=50)
 ):
     """
     Get articles with optional filtering.
@@ -53,6 +55,7 @@ async def get_articles(
         topic: Filter by topic
         sentiment: Filter by sentiment (positive, negative, neutral)
         source: Filter by source
+        api_source: Filter by API source (newsapi, newsdata, gdelt, mediastack, thenewsapi, worldnewsapi)
     
     Returns:
         List of articles
@@ -81,6 +84,10 @@ async def get_articles(
                 # Sanitize: strip whitespace and limit length
                 source = source.strip()[:200]
                 query = query.filter(NewsArticle.source == source)
+            if api_source:
+                # Sanitize: strip whitespace and limit length
+                api_source = api_source.lower().strip()[:50]
+                query = query.filter(NewsArticle.api_source == api_source)
             
             # Order by most recent first (handle NULL published_at)
             from sqlalchemy import nullslast
@@ -268,6 +275,49 @@ async def get_source_stats(limit: int = Query(default=10, ge=1, le=50)):
         )
     except Exception as e:
         logger.error(f"Unexpected error in get_source_stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.get("/stats/api-sources")
+async def get_api_source_stats():
+    """
+    Get statistics by API source.
+    
+    Returns:
+        API source distribution
+    """
+    from sqlalchemy import func
+    
+    try:
+        with get_db_session() as session:
+            stats = session.query(
+                NewsArticle.api_source,
+                func.count(NewsArticle.id).label('count')
+            ).filter(
+                NewsArticle.api_source.isnot(None)
+            ).group_by(
+                NewsArticle.api_source
+            ).order_by(
+                func.count(NewsArticle.id).desc()
+            ).all()
+            
+            return {
+                "api_sources": [
+                    {"api_source": api_source, "count": count}
+                    for api_source, count in stats
+                ]
+            }
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in get_api_source_stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error occurred"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in get_api_source_stats: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"

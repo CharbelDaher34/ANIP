@@ -8,7 +8,9 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from anip.shared.ingestion.base import BaseIngestor
 from anip.shared.ingestion.utils import normalize_language_code
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class NewsDataIngestor(BaseIngestor):
     """Pulls news articles from NewsData.io"""
@@ -48,9 +50,9 @@ class NewsDataIngestor(BaseIngestor):
         """
         params = {
             "apikey": self.api_key,
-            # "country": country,
-            # "language": language,
-            # "category": category
+            "country": country,
+            "language": language,
+            "category": category
         }
         
         if q:
@@ -94,9 +96,15 @@ class NewsDataIngestor(BaseIngestor):
                 'url': item.get("link"),
                 'published_at': published_at,
                 'language': normalize_language_code(item.get("language", "en")),
-                'region': country.upper()
+                'region': country.upper(),
+                'api_source': 'newsdata',
             }
             articles.append(article)
 
         return articles
 
+if __name__ == "__main__":
+    ingestor = NewsDataIngestor()
+    articles = ingestor.fetch(country="us", language="en", q="artificial intelligence", category="technology")
+    import json
+    print(articles)

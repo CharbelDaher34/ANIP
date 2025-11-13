@@ -35,11 +35,9 @@ async def lifespan(app: FastAPI):
         # Drop all tables with CASCADE to handle foreign key dependencies
         # logger.info("🗑️  Dropping all existing tables...")
         # with engine.begin() as conn:
-        #     # Drop all tables with CASCADE to handle foreign key constraints
-        #     conn.execute(text("DROP SCHEMA public CASCADE"))
-        #     conn.execute(text("CREATE SCHEMA public"))
-        #     conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
-        # logger.info("✅ All tables dropped successfully")
+        #     # Drop all tables with CASCADE to handle foreign key constraints // only the tables related to the news model
+        #     conn.execute(text("DROP TABLE IF EXISTS newsarticle CASCADE"))
+        # logger.info("✅ News article table dropped successfully")
         
         # Create all tables
         logger.info("📦 Creating database tables...")
