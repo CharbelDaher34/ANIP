@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /opt/anip
 
+# Install uv from official image
+COPY --from=docker.io/astral/uv:latest /uv /uvx /bin/
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
@@ -12,8 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml setup.py ./
 COPY src/ ./src/
 
-# Install anip package with API extras
-RUN pip install --no-cache-dir -e ".[api]"
+# Install anip package with API extras using uv
+RUN uv pip install --system -e ".[api]"
 
 # Copy application code
 COPY services/api/app /opt/anip/services/api/app

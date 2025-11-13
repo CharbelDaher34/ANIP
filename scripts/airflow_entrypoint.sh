@@ -3,6 +3,10 @@
 
 set -e
 
+# Create necessary log directories (permissions already set on host volume)
+echo "📁 Creating Airflow log directories..."
+mkdir -p /opt/airflow/logs/scheduler /opt/airflow/logs/dag_processor_manager 2>/dev/null || true
+
 # Function to setup Spark connection
 setup_spark_connection() {
     echo "🔧 Setting up Spark connection..."

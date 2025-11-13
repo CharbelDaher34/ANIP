@@ -9,7 +9,7 @@ x-restart: &restart_policy
 x-common: &common-config
   networks:
     - anip-net
-  restart: unless-stopped
+  # restart: unless-stopped
 
 # Common environment variables
 x-common-env: &common-env
@@ -25,6 +25,12 @@ x-airflow-env: &airflow-env
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@postgres:5432/${AIRFLOW_DB}
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
   AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
+  AIRFLOW__LOGGING__LOGGING_LEVEL: "INFO"
+  AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "True"
+  AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "True"
+  AIRFLOW__WEBSERVER__CONFIG_FILE: "/opt/anip/scripts/webserver_config.py"
+  PYTHONPATH: "/opt/anip/src:/opt/anip:${PYTHONPATH:-}"
   AIRFLOW_UID: ${AIRFLOW_UID:-50000}
   # News API Keys
   NEWSAPI_KEY: ${NEWSAPI_KEY:-}
@@ -39,7 +45,7 @@ x-airflow-env: &airflow-env
 
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     container_name: anip-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-anip}
@@ -58,7 +64,7 @@ services:
 
   # One-time init to create both DBs (anip + airflow)
   pg-init:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,7 +77,9 @@ services:
       psql -h postgres -U ${POSTGRES_USER} -c \"GRANT ALL PRIVILEGES ON DATABASE ${AIRFLOW_DB} TO ${AIRFLOW_DB_USER}\";
       psql -h postgres -U ${POSTGRES_USER} -d ${AIRFLOW_DB} -c \"GRANT ALL ON SCHEMA public TO ${AIRFLOW_DB_USER}\";
       psql -h postgres -U ${POSTGRES_USER} -d ${AIRFLOW_DB} -c \"GRANT CREATE ON SCHEMA public TO ${AIRFLOW_DB_USER}\";
-      echo 'Init done.'
+      psql -h postgres -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c \"CREATE EXTENSION IF NOT EXISTS vector\";
+      psql -h postgres -U ${POSTGRES_USER} -d ${AIRFLOW_DB} -c \"CREATE EXTENSION IF NOT EXISTS vector\";
+      echo 'Init done with pgvector enabled.'
       "
     <<: *default-networks
 

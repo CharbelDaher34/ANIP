@@ -1,6 +1,9 @@
-FROM apache/airflow:2.9.3
+FROM apache/airflow:2.10.4
 
 USER root
+
+# Install uv from official image
+COPY --from=docker.io/astral/uv:latest /uv /uvx /bin/
 
 # Install system dependencies - Java needed for spark-submit
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -13,26 +16,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set Java home
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
-USER airflow
-
 # Copy package files first (for better caching)
 COPY --chown=airflow:root pyproject.toml setup.py /opt/anip/
 COPY --chown=airflow:root src/ /opt/anip/src/
 
-# Install anip package with airflow extras
+# Install anip package with airflow extras using uv (as root)
 WORKDIR /opt/anip
-RUN pip install --no-cache-dir -e ".[airflow,ml]"
+RUN uv pip install --system --python $(which python) -e ".[airflow,ml]"
 
 # Install Spark provider and PySpark client (lightweight - ~100MB vs ~500MB for full Spark)
 # IMPORTANT: PySpark version MUST match Spark cluster version (4.0.0)
-RUN pip install --no-cache-dir \
+RUN uv pip install --system --python $(which python) \
     apache-airflow-providers-apache-spark==4.10.0 \
     pyspark==4.0.0
+
+# Verify installations
+RUN python -c "import airflow.providers.apache.spark; print('✅ Spark provider installed')" && \
+    python -c "import pyspark; print('✅ PySpark installed')"
 
 # Copy setup scripts
 COPY --chown=airflow:root scripts/setup_airflow_connections.py /opt/anip/scripts/
 COPY --chown=airflow:root scripts/airflow_entrypoint.sh /opt/anip/scripts/
+COPY --chown=airflow:root scripts/webserver_config.py /opt/anip/scripts/
 RUN chmod +x /opt/anip/scripts/airflow_entrypoint.sh
+
+# Set PYTHONPATH to include anip source
+ENV PYTHONPATH="/opt/anip/src:${PYTHONPATH}"
+
+# Switch to airflow user
+USER airflow
 
 WORKDIR /opt/airflow
 

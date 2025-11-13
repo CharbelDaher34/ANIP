@@ -294,21 +294,18 @@ with DAG(
     train_classification_task = PythonOperator(
         task_id='train_classification',
         python_callable=train_classification_model,
-        provide_context=True,
     )
     
     # Task 2: Train sentiment model
     train_sentiment_task = PythonOperator(
         task_id='train_sentiment',
         python_callable=train_sentiment_model,
-        provide_context=True,
     )
     
     # Task 3: Promote best models
     promote_models_task = PythonOperator(
         task_id='promote_models',
         python_callable=promote_best_models,
-        provide_context=True,
     )
     
     # Task 4: Reload models in inference
