@@ -1,23 +1,21 @@
 """
 Airflow DAG for NewsAPI data pipeline.
+Free tier: 100 requests/day
+Topic: Artificial Intelligence (AI)
 """
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from anip.config import settings
 
 def ingest_newsapi():
-    """Ingest articles from NewsAPI."""
+    """Ingest articles from NewsAPI about Artificial Intelligence."""
     from anip.shared.ingestion.newsapi_ingestor import NewsAPIIngestor
     from anip.shared.utils.db_utils import save_articles_batch
     
-    api_key = settings.news_api.newsapi_key
-    if not api_key:
-        raise ValueError("NEWSAPI_KEY not set in configuration")
-    
-    print("📰 Starting NewsAPI ingestion...")
-    ingestor = NewsAPIIngestor(api_key=api_key)
-    articles = ingestor.fetch(query="technology", country="us", page_size=20)
+    print("📰 Starting NewsAPI ingestion (Topic: Artificial Intelligence)...")
+    ingestor = NewsAPIIngestor()
+    # Fetch AI-related articles using query parameter
+    articles = ingestor.fetch(query="artificial intelligence AI", page_size=20)
     
     print(f"✅ Fetched {len(articles)} articles from NewsAPI")
     
@@ -38,13 +36,14 @@ default_args = {
 }
 
 # Create the DAG
+# Schedule: Every 6 hours (4 times/day = 4 requests/day, safe for 100/day limit)
 dag = DAG(
     'newsapi_pipeline',
     default_args=default_args,
-    description='Ingest news from NewsAPI',
+    description='Ingest AI news from NewsAPI (100 req/day limit)',
     schedule_interval=timedelta(hours=6),
     catchup=False,
-    tags=['ingestion', 'newsapi'],
+    tags=['ingestion', 'newsapi', 'ai'],
 )
 
 # Define tasks

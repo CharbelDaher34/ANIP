@@ -3,7 +3,6 @@ Database utility functions for saving articles.
 """
 import logging
 from typing import List, Dict, Any
-from datetime import datetime, timezone
 from anip.shared.database import get_db_session
 from anip.shared.models.news import NewsArticle
 
@@ -15,7 +14,11 @@ def save_articles_batch(articles: List[Dict[str, Any]]) -> int:
     Adds all articles without checking for duplicates.
     
     Args:
-        articles: List of article dictionaries with ML predictions
+        articles: List of article dictionaries from ingestors
+                 Expected fields: title, content, source, author, url, 
+                                 published_at, language, region
+                 Optional ML fields: topic, sentiment, sentiment_score, 
+                                   embedding, summary, keywords
         
     Returns:
         Number of articles successfully saved
@@ -33,6 +36,7 @@ def save_articles_batch(articles: List[Dict[str, Any]]) -> int:
             
             try:
                 # Create new article (no duplicate checking)
+                # Note: created_at and updated_at are handled by database server_default
                 article = NewsArticle(
                     title=article_data.get('title'),
                     content=article_data.get('content'),
@@ -47,9 +51,7 @@ def save_articles_batch(articles: List[Dict[str, Any]]) -> int:
                     sentiment_score=article_data.get('sentiment_score'),
                     embedding=article_data.get('embedding'),
                     summary=article_data.get('summary'),
-                    keywords=article_data.get('keywords'),
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc)
+                    keywords=article_data.get('keywords')
                 )
                 session.add(article)
                 savepoint.commit()  # Commit this savepoint
@@ -127,7 +129,8 @@ def update_articles_ml_predictions(articles: List[Dict[str, Any]]) -> int:
                 
                 # Only update if at least one field was updated
                 if updated_fields:
-                    article.updated_at = datetime.now(timezone.utc)
+                    # Update timestamp to trigger updated_at automatic update
+                    session.flush()  # Let database handle updated_at via onupdate
                     savepoint.commit()
                     print(f"✅ Updated article: {article.title[:50]} (fields: {', '.join(updated_fields)})")
                     updated_count += 1

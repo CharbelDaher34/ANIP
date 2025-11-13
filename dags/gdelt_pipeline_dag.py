@@ -1,18 +1,21 @@
 """
 Airflow DAG for GDELT data pipeline.
+Free tier: Unlimited (completely free, no API key required)
+Topic: Deep Learning & Neural Networks
 """
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 def ingest_gdelt():
-    """Ingest articles from GDELT."""
+    """Ingest articles from GDELT about Deep Learning."""
     from anip.shared.ingestion.gdelt_ingestor import GDELTIngestor
     from anip.shared.utils.db_utils import save_articles_batch
     
-    print("📰 Starting GDELT ingestion...")
+    print("📰 Starting GDELT ingestion (Topic: Deep Learning)...")
     ingestor = GDELTIngestor()
-    articles = ingestor.fetch(query="technology", max_records=20)
+    # Fetch deep learning and neural networks articles
+    articles = ingestor.fetch(query="deep learning neural networks", max_records=20)
     
     print(f"✅ Fetched {len(articles)} articles from GDELT")
     
@@ -33,13 +36,14 @@ default_args = {
 }
 
 # Create the DAG
+# Schedule: Every 12 hours (2 times/day, GDELT has no rate limits)
 dag = DAG(
     'gdelt_pipeline',
     default_args=default_args,
-    description='Ingest news from GDELT',
+    description='Ingest deep learning news from GDELT (unlimited free tier)',
     schedule_interval=timedelta(hours=12),
     catchup=False,
-    tags=['ingestion', 'gdelt'],
+    tags=['ingestion', 'gdelt', 'deep-learning'],
 )
 
 # Define tasks
