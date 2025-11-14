@@ -1,17 +1,28 @@
+#!/usr/bin/env python
 """
 Test script to nullify ML fields for selected articles.
 Used for testing the Spark ML processing pipeline.
+
+Run with: uv run python tests/test_spark_null_topics.py
+Or with: python tests/test_spark_null_topics.py (if .env is present)
 """
-import os
-import sys
 from datetime import datetime, timezone
 from typing import List
 
-# Add project root to path
-sys.path.insert(0, '/opt/anip')
+import sys
+import os
+import time
 
-from shared.database import get_db_session, init_database
-from shared.models.news import NewsArticle
+# Load .env file before importing anip modules
+from dotenv import load_dotenv
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(project_root, '.env'))
+
+# Add src to path
+sys.path.insert(0, os.path.join(project_root, 'src'))
+
+from anip.shared.database import get_db_session, init_database
+from anip.shared.models.news import NewsArticle
 from sqlalchemy import func, select
 
 def create_tables_if_not_exist():

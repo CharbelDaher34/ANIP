@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from anip.shared.database import get_db_session
 from anip.shared.models.news import NewsArticle
 from anip.ml.embedding import generate_embedding
+from anip.agent import search_news, NewsAgentOutput
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["news"])
@@ -486,5 +487,70 @@ async def get_missing_ml_stats():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
+        )
+
+
+@router.get("/chat", response_model=NewsAgentOutput)
+async def chat_with_news_agent(
+    query: str = Query(..., min_length=1, max_length=500, description="Your question or search query"),
+    max_results: int = Query(default=5, ge=1, le=10, description="Maximum number of results per source"),
+    search_provider: str = Query(default="both", regex="^(duckduckgo|database|both)$", description="Search provider to use")
+):
+    """
+    Chat with the AI News Agent.
+    
+    This endpoint uses a Pydantic AI agent to intelligently search for news articles
+    using DuckDuckGo and/or the internal news database with semantic search.
+    
+    The agent will:
+    - Understand your query intent
+    - Choose the appropriate search tools
+    - Combine results from multiple sources
+    - Provide a summary of findings
+    
+    Args:
+        query: Your question or search query (e.g., "What's the latest AI news?")
+        max_results: Maximum number of results per source (1-10, default: 5)
+        search_provider: Which sources to search:
+            - "duckduckgo": External web search only (best for breaking news)
+            - "database": Internal database only (best for analyzed content)
+            - "both": Search both sources (default, most comprehensive)
+    
+    Returns:
+        Structured response with:
+        - summary: Brief overview of findings
+        - answer: Complete detailed answer based on all search results
+        - duckduckgo_results: Articles from DuckDuckGo search (separate)
+        - database_results: Articles from internal database (separate)
+        - sources_used: Which sources were searched
+        - query_intent: Agent's interpretation of your query
+        - total_results: Total number of articles found
+        - duckduckgo_count: Number of DuckDuckGo results
+        - database_count: Number of database results
+    
+    Example queries:
+        - "What are the latest developments in AI?"
+        - "Find positive technology news"
+        - "Show me articles about climate change"
+        - "What's happening in politics today?"
+    """
+    try:
+        logger.info(f"Chat request - Query: {query[:100]}, Provider: {search_provider}, Max: {max_results}")
+        
+        # Call the Pydantic AI news agent
+        result = await search_news(
+            query=query,
+            max_results=max_results,
+            search_provider=search_provider
+        )
+        
+        logger.info(f"Agent response - Found {result.total_results} articles from {len(result.sources_used)} sources")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in chat_with_news_agent: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process chat request: {str(e)}"
         )
 

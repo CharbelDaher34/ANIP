@@ -124,9 +124,16 @@ def update_articles_ml_predictions(articles: List[Dict[str, Any]]) -> int:
                     article.sentiment_score = article_data.get('sentiment_score')
                     updated_fields.append('sentiment_score')
                 
-                if article_data.get('embedding') is not None:
-                    article.embedding = article_data.get('embedding')
-                    updated_fields.append('embedding')
+                embedding = article_data.get('embedding')
+                if embedding is not None:
+                    # Validate embedding before saving - don't store zero vectors
+                    if isinstance(embedding, list) and len(embedding) > 0:
+                        # Check if it's not all zeros
+                        if sum(abs(x) for x in embedding) > 0.001:
+                            article.embedding = embedding
+                            updated_fields.append('embedding')
+                        else:
+                            logger.warning(f"Skipping zero-norm embedding for article ID {article_id}")
                 
                 # Only update if at least one field was updated
                 if updated_fields:

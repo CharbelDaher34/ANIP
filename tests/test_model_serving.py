@@ -7,6 +7,13 @@ import requests
 import json
 import sys
 
+import sys
+import os
+import time
+# Add src to path, go to root through src/anip
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+#print cwd and sle
+
 # Model serving endpoints
 CLASSIFICATION_URL = "http://localhost:5001/invocations"
 SENTIMENT_URL = "http://localhost:5002/invocations"

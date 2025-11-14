@@ -111,11 +111,15 @@ def generate_embedding_udf(title: str, content: str) -> List[float]:
     """UDF wrapper for embedding generation."""
     try:
         if not title or not content:
-            return [0.0] * 384
-        return generate_embedding(title, content)
+            return None  # Don't store invalid embeddings
+        embedding = generate_embedding(title, content)
+        # Validate embedding - don't store zero vectors
+        if embedding and sum(abs(x) for x in embedding) > 0.001:  # Not all zeros
+            return embedding
+        return None
     except Exception as e:
         print(f"Error in embedding generation: {e}")
-        return [0.0] * 384
+        return None  # Don't store failed embeddings
 
 # ==================== Database Operations ====================
 
