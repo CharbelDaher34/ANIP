@@ -87,7 +87,7 @@ services:
   spark-master:
     build:
       context: .
-      dockerfile: Dockerfile.spark
+      dockerfile: spark/Dockerfile
     container_name: spark-master
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     ports:
@@ -111,7 +111,7 @@ services:
   spark-worker:
     build:
       context: .
-      dockerfile: Dockerfile.spark
+      dockerfile: spark/Dockerfile
     container_name: spark-worker
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     depends_on:
@@ -231,7 +231,7 @@ services:
   airflow-init:
     build:
       context: .
-      dockerfile: Dockerfile.airflow
+      dockerfile: dags/Dockerfile.airflow
     container_name: anip-airflow-init
     depends_on:
       pg-init:
@@ -253,7 +253,7 @@ services:
   airflow-scheduler:
     build:
       context: .
-      dockerfile: Dockerfile.airflow
+      dockerfile: dags/Dockerfile.airflow
     container_name: anip-airflow-scheduler
     depends_on:
       airflow-init:
@@ -277,7 +277,7 @@ services:
   airflow-webserver:
     build:
       context: .
-      dockerfile: Dockerfile.airflow
+      dockerfile: dags/Dockerfile.airflow
     container_name: anip-airflow-webserver
     depends_on:
       airflow-scheduler:

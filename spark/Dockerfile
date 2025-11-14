@@ -19,14 +19,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
     && update-alternatives --set python3 /usr/bin/python3.12
 
-# Copy package files
+# Copy package files for caching
 COPY pyproject.toml setup.py /opt/anip/
 COPY src/ /opt/anip/src/
 
-# Install anip package with ML extras using uv
+# Install anip package with ML extras
 WORKDIR /opt/anip
-# Ignore pre-installed blinker from base image (distutils conflict)
-RUN uv pip install --system --python python3.12 --reinstall-package blinker -e ".[ml]"
+RUN uv pip install --system --python python3.12 --reinstall-package blinker -e ".[ml]" && \
+    python3.12 -c "import mlflow; print('✅ MLflow installed')" && \
+    python3.12 -c "import sklearn; print('✅ scikit-learn installed')"
 
 USER spark
 

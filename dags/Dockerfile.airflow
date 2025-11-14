@@ -20,18 +20,10 @@ ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 COPY --chown=airflow:root pyproject.toml setup.py /opt/anip/
 COPY --chown=airflow:root src/ /opt/anip/src/
 
-# Install anip package with airflow extras using uv (as root)
+# Install anip package with airflow and ml extras using uv
 WORKDIR /opt/anip
-RUN uv pip install --system --python $(which python) -e ".[airflow,ml]"
-
-# Install Spark provider and PySpark client (lightweight - ~100MB vs ~500MB for full Spark)
-# IMPORTANT: PySpark version MUST match Spark cluster version (4.0.0)
-RUN uv pip install --system --python $(which python) \
-    apache-airflow-providers-apache-spark==4.10.0 \
-    pyspark==4.0.0
-
-# Verify installations
-RUN python -c "import airflow.providers.apache.spark; print('✅ Spark provider installed')" && \
+RUN uv pip install --system --python $(which python) -e ".[airflow,ml]" && \
+    python -c "import airflow.providers.apache.spark; print('✅ Spark provider installed')" && \
     python -c "import pyspark; print('✅ PySpark installed')"
 
 # Copy setup scripts
