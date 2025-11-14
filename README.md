@@ -5,9 +5,10 @@ An end-to-end automated pipeline for collecting, processing, and analyzing news 
 **What it does:**
 - 📰 Collects news from multiple sources (NewsAPI, NewsData.io, GDELT)
 - 🤖 Processes with ML models (topic classification, sentiment analysis, embeddings)
-- 💾 Stores in PostgreSQL
+- 💾 Stores in PostgreSQL with vector search (pgvector)
 - 🔄 Orchestrates with Apache Airflow
 - 🚀 Serves via REST API
+- 🧠 **AI Agent** for intelligent news search and analysis
 
 ---
 
@@ -32,7 +33,11 @@ An end-to-end automated pipeline for collecting, processing, and analyzing news 
 | **Airflow Webserver** | `anip-airflow-webserver` | Web UI for monitoring | 8080 |
 | **Spark Master** | `spark-master` | Coordinates ML processing | 9090 |
 | **Spark Worker** | `spark-worker` | Executes transformations | 9091 |
-| **FastAPI** | `anip-api` | REST API for querying | 8000 |
+| **MLflow** | `anip-mlflow` | Model registry and tracking | 5000 |
+| **Model Serving (Classification)** | `anip-model-serving-classification` | Topic classification API | 5001 |
+| **Model Serving (Sentiment)** | `anip-model-serving-sentiment` | Sentiment analysis API | 5002 |
+| **Embedding Service** | `anip-embedding-service` | Text embedding generation | 5003 |
+| **FastAPI** | `anip-api` | REST API + AI Agent | 8000 |
 
 All services communicate via the `anip-net` Docker network.
 
@@ -84,9 +89,18 @@ Articles are saved without ML predictions initially (`topic`, `sentiment`, `embe
 
 ### 3. API Layer (FastAPI)
 
-REST API for querying processed articles.
+REST API for querying processed articles + AI-powered news search.
 
 **Location**: `services/api/app/`
+
+**Features**:
+- Query articles by topic, sentiment, source
+- Semantic search using embeddings
+- Statistics and analytics endpoints
+- **AI Agent** (`/api/chat`) - Intelligent news assistant
+  - DuckDuckGo search integration
+  - Semantic database search
+  - Multi-source result aggregation
 
 ---
 
@@ -143,8 +157,14 @@ docker exec anip-airflow-scheduler airflow dags trigger spark_ml_processing
 ### Query Results
 
 ```bash
+# Use AI Agent (New!)
+curl "http://localhost:8000/api/chat?query=latest%20AI%20news&max_results=5"
+
 # Get articles
 curl http://localhost:8000/api/articles?limit=5
+
+# Semantic search
+curl "http://localhost:8000/api/search/similar?question=artificial%20intelligence&limit=3"
 
 # Get statistics
 curl http://localhost:8000/api/stats/general
@@ -156,6 +176,36 @@ curl "http://localhost:8000/api/articles?topic=Technology&sentiment=positive"
 ---
 
 ## API Endpoints
+
+### AI Chat Agent (New!)
+```http
+GET /api/chat?query=artificial%20intelligence%20news&max_results=5&search_provider=both
+```
+
+**Parameters:**
+- `query` (required): Your question or search query
+- `max_results` (optional): Maximum results per source (default: 5)
+- `search_provider` (optional): `both`, `duckduckgo`, or `database` (default: both)
+
+**Response:**
+```json
+{
+  "summary": "AI-generated summary of all findings...",
+  "answer": "Detailed answer to your question...",
+  "duckduckgo_results": [...],
+  "database_results": [...],
+  "sources_used": ["DuckDuckGo", "Internal Database"],
+  "query_intent": "Breaking news search",
+  "total_results": 8,
+  "duckduckgo_count": 5,
+  "database_count": 3
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:8000/api/chat?query=latest%20AI%20breakthroughs&max_results=3"
+```
 
 ### List Articles
 ```http
@@ -214,6 +264,18 @@ GET /api/stats/missing-ml
 
 Shows articles with incomplete ML predictions.
 
+### Semantic Search
+```http
+GET /api/search/similar?question=climate%20change&limit=5
+```
+
+**Parameters:**
+- `question` (required): Natural language query
+- `limit` (optional): Number of results (default: 5)
+- `threshold` (optional): Similarity threshold 0.0-1.0 (default: 0.5)
+
+Returns articles ranked by semantic similarity using embeddings.
+
 ### Health Check
 ```http
 GET /health
@@ -229,26 +291,41 @@ anip/
 │   ├── newsapi_pipeline.py
 │   ├── newsdata_pipeline.py
 │   ├── gdelt_pipeline.py
-│   └── spark_ml_processing_dag.py
+│   ├── spark_ml_processing_dag.py
+│   └── Dockerfile.airflow
 ├── spark/                          # Spark ML jobs
-│   └── ml_processing.py
-├── ml/                             # ML models
-│   ├── classification.py
-│   ├── sentiment.py
-│   └── embedding.py
-├── shared/                         # Shared modules
-│   ├── database.py
-│   ├── models/news.py
-│   ├── ingestion/                  # News ingestors
-│   └── utils/db_utils.py
-├── services/api/                   # FastAPI service
-│   └── app/
-│       ├── main.py
-│       └── routes.py
+│   ├── ml_processing.py
+│   └── Dockerfile
+├── src/anip/                       # Main Python package
+│   ├── agent/                      # AI Agent (NEW!)
+│   │   ├── news_agent.py           # Pydantic AI news agent
+│   │   └── __init__.py
+│   ├── ml/                         # ML models
+│   │   ├── classification.py
+│   │   ├── sentiment.py
+│   │   └── embedding.py
+│   ├── shared/                     # Shared modules
+│   │   ├── database.py
+│   │   ├── models/news.py
+│   │   ├── ingestion/              # News ingestors
+│   │   └── utils/db_utils.py
+├── services/
+│   ├── api/                        # FastAPI service
+│   │   └── app/
+│   │       ├── main.py
+│   │       └── routes.py
+│   ├── mlflow/                     # MLflow model serving
+│   │   ├── model_server.py
+│   │   └── Dockerfile
+│   └── embedding/                  # Embedding microservice
+│       ├── embedding_service.py
+│       └── Dockerfile
+├── tests/                          # Test files
+│   ├── test_api.py
+│   ├── test_embedding_service.py
+│   └── test_model_serving.py
 ├── docker-compose.yml
-├── Dockerfile.spark
-├── Dockerfile.airflow
-├── Dockerfile.api
+├── pyproject.toml
 └── .env
 ```
 
@@ -281,6 +358,12 @@ AIRFLOW_UID=50000
 # API
 CORS_ORIGINS=*
 
+# OpenAI (for AI Agent)
+OPENAI_API_KEY=your_openai_api_key
+
+# Embedding Service
+EMBEDDING_SERVICE_URL=http://embedding-service:5003
+
 # GitHub (for code push)
 GITHUB_TOKEN=your_github_token
 ```
@@ -289,6 +372,7 @@ GITHUB_TOKEN=your_github_token
 - **NewsAPI**: https://newsapi.org
 - **NewsData**: https://newsdata.io
 - **GDELT**: No key needed (public)
+- **OpenAI**: https://platform.openai.com (for AI Agent)
 
 ---
 
