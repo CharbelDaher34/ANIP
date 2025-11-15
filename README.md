@@ -49,10 +49,9 @@ All services communicate via the `anip-net` Docker network.
 
 Watch the ANIP Chat Interface in action:
 
-<video width="100%" controls>
-  <source src="demo/anip_rec.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+![ANIP Chat Demo](demo/anip_demo.gif)
+
+> 💡 **Tip**: Click [here](demo/anip_rec.mp4) to download the full video (4.5MB) for better quality
 
 **What you'll see:**
 - 💬 Real-time chat interface with conversation management
