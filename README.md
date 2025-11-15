@@ -15,10 +15,10 @@ An end-to-end automated pipeline for collecting, processing, and analyzing news 
 ## Table of Contents
 
 - [Infrastructure](#infrastructure)
+- [Chat UI Demo](#chat-ui-demo)
 - [How It Works](#how-it-works)
 - [Quick Start](#quick-start)
 - [API Endpoints](#api-endpoints)
-- [Development](#development)
 
 ---
 
@@ -40,6 +40,37 @@ An end-to-end automated pipeline for collecting, processing, and analyzing news 
 | **FastAPI** | `anip-api` | REST API + AI Agent | 8000 |
 
 All services communicate via the `anip-net` Docker network.
+
+---
+
+## Chat UI Demo
+
+### 🎥 Video Demonstration
+
+Watch the ANIP Chat Interface in action:
+
+[**📺 View Demo Video**](demo/anip_rec.mp4)
+
+**What you'll see:**
+- 💬 Real-time chat interface with conversation management
+- 🔍 Multi-source news search (DuckDuckGo + Internal Database)
+- 🤖 AI-powered analysis and summarization
+- 📊 Source verification with detailed modal views
+- 🎯 Topic classification and sentiment analysis
+- ⚡ Live search results with relevance scoring
+
+**Access the Chat UI:**
+```
+http://localhost:8000/chat
+```
+
+**Key Features:**
+- Create and manage multiple conversations
+- Search across DuckDuckGo and your processed news database
+- View detailed source information with full article content
+- See sentiment analysis and topic classification
+- Collapsible source sections for better organization
+- Responsive design with smooth animations
 
 ---
 
