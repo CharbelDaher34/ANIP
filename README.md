@@ -221,7 +221,7 @@ Wait 2-3 minutes for initialization.
 
 ```bash
 # 1. Open Airflow UI
-# Go to http://localhost:8080 (login: admin/admin)
+# Go to http://localhost:8080 (no login required)
 
 # 2. Find and trigger the 'ml_training' DAG
 # This trains classification and sentiment models (~10-15 minutes)
@@ -238,7 +238,7 @@ The model serving containers start before models exist. After training, restarti
 
 ### Access Services
 
-- **Airflow UI**: http://localhost:8080 (admin/admin)
+- **Airflow UI**: http://localhost:8080 (no login required - auth disabled)
 - **Spark UI**: http://localhost:9090
 - **MLflow UI**: http://localhost:5000
 - **API**: http://localhost:8000
@@ -248,9 +248,8 @@ The model serving containers start before models exist. After training, restarti
 ### Run Data Pipeline
 
 **Via Airflow UI:**
-1. Go to http://localhost:8080
-2. Login with admin/admin
-3. Enable and trigger ingestion DAGs:
+1. Go to http://localhost:8080 (no login required)
+2. Enable and trigger ingestion DAGs:
    - `newsapi_pipeline`
    - `thenewsapi_pipeline`
    - `worldnewsapi_pipeline`
