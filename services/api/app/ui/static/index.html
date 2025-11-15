@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ANIP Chat - News Intelligence Assistant</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar with conversations list -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>ANIP Chat</h1>
+                <button id="newChatBtn" class="btn btn-primary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    New Chat
+                </button>
+            </div>
+            <div class="conversations-list" id="conversationsList">
+                <div class="loading">Loading conversations...</div>
+            </div>
+        </aside>
+
+        <!-- Main chat area -->
+        <main class="chat-area">
+            <!-- Empty state -->
+            <div class="empty-state" id="emptyState">
+                <div class="empty-state-content">
+                    <h2>🤖 Welcome to ANIP Chat</h2>
+                    <p>Your AI-powered news intelligence assistant</p>
+                    <p class="subtitle">Search news from multiple sources with intelligent analysis</p>
+                    <button id="startChatBtn" class="btn btn-primary btn-large">Start New Chat</button>
+                </div>
+            </div>
+
+            <!-- Chat container -->
+            <div class="chat-container" id="chatContainer" style="display: none;">
+                <div class="chat-header">
+                    <div class="chat-title">
+                        <h2 id="chatTitle">Conversation</h2>
+                        <span class="chat-subtitle" id="chatSubtitle"></span>
+                    </div>
+                    <button id="deleteChatBtn" class="btn btn-danger-icon" title="Delete conversation">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="messages-container" id="messagesContainer">
+                    <!-- Messages will be inserted here -->
+                </div>
+
+                <div class="input-area">
+                    <form id="messageForm">
+                        <div class="input-wrapper">
+                            <textarea 
+                                id="messageInput" 
+                                placeholder="Ask about news... (e.g., 'Latest AI developments')"
+                                rows="1"
+                            ></textarea>
+                            <button type="submit" class="btn btn-send" id="sendBtn">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="input-options">
+                            <label>
+                                <input type="radio" name="searchProvider" value="both" checked> Both Sources
+                            </label>
+                            <label>
+                                <input type="radio" name="searchProvider" value="duckduckgo"> DuckDuckGo Only
+                            </label>
+                            <label>
+                                <input type="radio" name="searchProvider" value="database"> Database Only
+                            </label>
+                            <label class="max-results-label">
+                                Max Results: <input type="number" id="maxResults" value="5" min="1" max="20">
+                            </label>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Source Details Modal -->
+    <div id="sourceModal" class="modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Source Details</h3>
+                <button class="modal-close" id="modalCloseBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Source details will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
+

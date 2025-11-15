@@ -34,9 +34,9 @@ An end-to-end automated pipeline for collecting, processing, and analyzing news 
 | **Spark Master** | `spark-master` | Coordinates ML processing | 9090 |
 | **Spark Worker** | `spark-worker` | Executes transformations | 9091 |
 | **MLflow** | `anip-mlflow` | Model registry and tracking | 5000 |
-| **Model Serving (Classification)** | `anip-model-serving-classification` | Topic classification API | 5001 |
-| **Model Serving (Sentiment)** | `anip-model-serving-sentiment` | Sentiment analysis API | 5002 |
-| **Embedding Service** | `anip-embedding-service` | Text embedding generation | 5003 |
+| **Model Serving (Classification)** | `anip-model-serving-classification` | MLflow-served topic classification API | 5001 |
+| **Model Serving (Sentiment)** | `anip-model-serving-sentiment` | MLflow-served sentiment analysis API | 5002 |
+| **Embedding Service** | `anip-embedding-service` | Standalone text embedding generation service | 5003 |
 | **FastAPI** | `anip-api` | REST API + AI Agent | 8000 |
 
 All services communicate via the `anip-net` Docker network.
@@ -47,47 +47,86 @@ All services communicate via the `anip-net` Docker network.
 
 ### 1. Data Ingestion (Airflow DAGs)
 
-Three DAGs fetch news articles and save them to PostgreSQL:
+Six DAGs fetch news articles from different sources and save them to PostgreSQL:
 
-**NewsAPI Pipeline** (`newsapi_pipeline.py`)
-- Fetches from NewsAPI.org
-- Topics: Technology, Business, Science
+**NewsAPI Pipeline** (`newsapi_pipeline_dag.py`)
+- Source: NewsAPI.org
+- Topic: Artificial Intelligence (AI)
 - Schedule: Every 6 hours
+- Rate Limit: 100 requests/day (free tier)
 
-**NewsData Pipeline** (`newsdata_pipeline.py`)
-- Fetches from NewsData.io
-- Coverage: Global news, multiple languages
+**TheNewsAPI Pipeline** (`thenewsapi_pipeline_dag.py`)
+- Source: TheNewsAPI.com
+- Topic: Computer Vision
 - Schedule: Every 6 hours
+- Rate Limit: 100 requests/day (free tier, 3 articles per request)
 
-**GDELT Pipeline** (`gdelt_pipeline.py`)
-- Queries GDELT Project
-- Real-time global events
+**WorldNewsAPI Pipeline** (`worldnewsapi_pipeline_dag.py`)
+- Source: WorldNewsAPI.com
+- Schedule: Every 6 hours
+- Rate Limit: Varies by tier
+
+**NewsData Pipeline** (`newsdata_pipeline_dag.py`)
+- Source: NewsData.io
+- Schedule: Every 6 hours
+- Rate Limit: Varies by tier
+
+**GDELT Pipeline** (`gdelt_pipeline_dag.py`)
+- Source: GDELT Project
+- Topic: Deep Learning & Neural Networks
 - Schedule: Every 12 hours
+- Rate Limit: Unlimited (completely free, no API key required)
+
+**MediaStack Pipeline** (`mediastack_pipeline_dag.py`)
+- Source: MediaStack API
+- Schedule: Every 6 hours
+- Rate Limit: Varies by tier
 
 Articles are saved without ML predictions initially (`topic`, `sentiment`, `embedding` are `NULL`).
 
-### 2. ML Processing (Spark Job)
+### 2. ML Model Training (Airflow DAG)
+
+**ML Training DAG** (`ml_training_dag.py`)
+- **Purpose**: Train and retrain ML models
+- **Schedule**: Daily (configurable)
+- **Tasks**:
+  1. Train classification model (topic classification)
+  2. Train sentiment model (sentiment analysis)
+  3. Evaluate models
+  4. Promote best models to production (MLflow Model Registry)
+- **Description**: Orchestrates the complete ML training pipeline, including dataset preparation, training, evaluation, and model promotion to production
+
+### 3. ML Processing (Spark Job)
 
 **Trigger**: `spark_ml_processing` DAG (manual or scheduled)
 
 **Process**:
 1. Check for articles missing ML predictions
 2. Load articles from PostgreSQL
-3. Apply ML models in parallel:
-   - **Topic Classification**: Categorizes into Business, Technology, Sports, Politics, Health, Science, Entertainment, World
-   - **Sentiment Analysis**: Positive/Neutral/Negative + confidence score
-   - **Embeddings**: 384-dimensional vectors for similarity search
+3. Apply ML models in parallel via HTTP services:
+   - **Topic Classification**: Calls MLflow model serving service (`anip-model-serving-classification:5001`) - Categorizes into Business, Technology, Sports, Politics, Health, Science, Entertainment, World
+   - **Sentiment Analysis**: Calls MLflow model serving service (`anip-model-serving-sentiment:5002`) - Positive/Neutral/Negative + confidence score
+   - **Embeddings**: Calls dedicated embedding service (`anip-embedding-service:5003`) - Generates 384-dimensional vectors for similarity search
 4. Update articles in database (no duplicates created)
 
-**Models Location**: `ml/classification.py`, `ml/sentiment.py`, `ml/embedding.py`
+**ML Services Architecture**:
+- **Classification & Sentiment Models**: Deployed via MLflow in dedicated model serving containers
+  - Models are registered in MLflow Model Registry
+  - Served via REST API endpoints (`/invocations`)
+  - Spark workers call these services via HTTP
+- **Embedding Service**: Standalone microservice using sentence-transformers
+  - Dedicated container (`anip-embedding-service`)
+  - REST API endpoints (`/embed`, `/embed/batch`)
+  - Generates 384-dimensional embeddings using `all-MiniLM-L6-v2` model
 
 **Features**:
 - Distributed processing with Spark
+- Microservices architecture (models served via HTTP)
 - Update-only (never creates duplicates)
 - Null-safe (only updates fields with valid predictions)
 - Processes 1000+ articles in 5-10 minutes
 
-### 3. API Layer (FastAPI)
+### 4. API Layer (FastAPI)
 
 REST API for querying processed articles + AI-powered news search.
 
@@ -140,18 +179,31 @@ Wait 2-3 minutes for initialization.
 **Via Airflow UI:**
 1. Go to http://localhost:8080
 2. Login with admin/admin
-3. Enable and trigger DAGs: `newsapi_pipeline`, `newsdata_pipeline`, `gdelt_pipeline`
-4. After ingestion completes, trigger `spark_ml_processing`
+3. Enable and trigger ingestion DAGs:
+   - `newsapi_pipeline`
+   - `thenewsapi_pipeline`
+   - `worldnewsapi_pipeline`
+   - `newsdata_pipeline`
+   - `gdelt_pipeline`
+   - `mediastack_pipeline`
+4. After ingestion completes, trigger `spark_ml_processing` to apply ML models
+5. (Optional) Trigger `ml_training` to train/retrain models
 
 **Via Command Line:**
 ```bash
-# Ingest articles
+# Ingest articles from various sources
 docker exec anip-airflow-scheduler airflow dags trigger newsapi_pipeline
+docker exec anip-airflow-scheduler airflow dags trigger thenewsapi_pipeline
+docker exec anip-airflow-scheduler airflow dags trigger worldnewsapi_pipeline
 docker exec anip-airflow-scheduler airflow dags trigger newsdata_pipeline
 docker exec anip-airflow-scheduler airflow dags trigger gdelt_pipeline
+docker exec anip-airflow-scheduler airflow dags trigger mediastack_pipeline
 
 # Process with ML (wait 2-3 min after ingestion)
 docker exec anip-airflow-scheduler airflow dags trigger spark_ml_processing
+
+# Train models (optional)
+docker exec anip-airflow-scheduler airflow dags trigger ml_training
 ```
 
 ### Query Results
@@ -288,11 +340,16 @@ GET /health
 ```
 anip/
 ├── dags/                           # Airflow DAG definitions
-│   ├── newsapi_pipeline.py
-│   ├── newsdata_pipeline.py
-│   ├── gdelt_pipeline.py
+│   ├── newsapi_pipeline_dag.py
+│   ├── thenewsapi_pipeline_dag.py
+│   ├── worldnewsapi_pipeline_dag.py
+│   ├── newsdata_pipeline_dag.py
+│   ├── gdelt_pipeline_dag.py
+│   ├── mediastack_pipeline_dag.py
+│   ├── ml_training_dag.py
 │   ├── spark_ml_processing_dag.py
-│   └── Dockerfile.airflow
+│   ├── Dockerfile.airflow
+│   └── README.md
 ├── spark/                          # Spark ML jobs
 │   ├── ml_processing.py
 │   └── Dockerfile
@@ -371,52 +428,13 @@ GITHUB_TOKEN=your_github_token
 **Get API Keys:**
 - **NewsAPI**: https://newsapi.org
 - **NewsData**: https://newsdata.io
+- **TheNewsAPI**: https://www.thenewsapi.com
+- **WorldNewsAPI**: https://worldnewsapi.com
+- **MediaStack**: https://mediastack.com
 - **GDELT**: No key needed (public)
 - **OpenAI**: https://platform.openai.com (for AI Agent)
 
----
-
-## Development
-
-### Add Dependencies
-```bash
-uv add <package-name>
-```
-
-### Database Access
-```bash
-# Connect to PostgreSQL
-docker exec -it anip-postgres psql -U postgres -d anip
-
-# Run queries
-SELECT COUNT(*) FROM newsarticle;
-SELECT topic, COUNT(*) FROM newsarticle GROUP BY topic;
-```
-
-### View Logs
-```bash
-docker logs anip-airflow-scheduler -f
-docker logs spark-master -f
-docker logs anip-api -f
-docker-compose logs -f
-```
-
-### Rebuild Services
-```bash
-# Specific service
-docker-compose build api
-docker-compose up -d api
-
-# All services
-docker-compose build
-docker-compose up -d
-```
-
-### Reset Database
-```bash
-# API recreates tables on startup
-docker-compose restart api
-```
+**Note**: See `dags/README.md` for detailed information about all DAGs, schedules, and rate limits.
 
 ---
 
@@ -435,15 +453,6 @@ docker-compose restart api airflow-scheduler
 ```
 
 **DAG not appearing**: Restart scheduler and wait 1 minute
-
----
-
-## Performance
-
-- **Ingestion**: ~100 articles per run
-- **ML Processing**: ~1000 articles in 5-10 minutes
-- **Database**: Tested with 10,000+ articles
-- **API**: ~100 requests/second
 
 ---
 

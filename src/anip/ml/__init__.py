@@ -20,7 +20,6 @@ from .sentiment import SENTIMENT_LABELS
 
 # Import legacy modules (embedding and summarization still use old implementation)
 from .embedding import generate_embedding
-from .summarization import summarize_text
 
 
 # ==================== Backward Compatible API ====================
@@ -69,9 +68,6 @@ __all__ = [
     
     # Embedding (legacy)
     'generate_embedding',
-    
-    # Summarization (legacy)
-    'summarize_text',
 ]
 
 

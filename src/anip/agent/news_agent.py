@@ -6,18 +6,13 @@ with semantic search capabilities.
 """
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Optional, List
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
-from sqlalchemy import select, func
-from sqlalchemy.orm import Session
 from ddgs import DDGS
 
 from anip.shared.database import get_db_session
-from anip.shared.models.news import NewsArticle
-from anip.ml.embedding import generate_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -28,23 +23,48 @@ class NewsAgentDependencies:
     Dependencies for the News Agent.
     
     These are injected into tools and dynamic instructions to provide
-    access to the database and external APIs.
+    access to the database and external APIs. Also tracks tool outputs.
     """
     user_query: str
     max_results: int = 5
     search_provider: str = "duckduckgo"  # or "database"
+    
+    # Tool result tracking (populated by tools)
+    duckduckgo_results: List[dict] = None
+    database_results: List[dict] = None
+    
+    def __post_init__(self):
+        """Initialize result tracking lists."""
+        if self.duckduckgo_results is None:
+            self.duckduckgo_results = []
+        if self.database_results is None:
+            self.database_results = []
 
 
 class NewsSearchResult(BaseModel):
     """Single news article result."""
     title: str = Field(description="Article title")
     url: str = Field(description="Article URL")
-    snippet: Optional[str] = Field(None, description="Article snippet or summary")
+    content: Optional[str] = Field(None, description="Article content")
     source: Optional[str] = Field(None, description="News source")
     published_at: Optional[str] = Field(None, description="Publication date")
     topic: Optional[str] = Field(None, description="Article topic/category")
     sentiment: Optional[str] = Field(None, description="Article sentiment")
     relevance_score: Optional[float] = Field(None, description="Relevance score (0-1)")
+
+
+class AgentAnalysis(BaseModel):
+    """
+    LLM-generated analysis from the News Agent.
+    
+    This model contains ONLY the fields that the LLM should generate.
+    Actual search results are populated programmatically from tool outputs.
+    """
+    summary: str = Field(description="Brief summary of findings from all sources")
+    answer: str = Field(description="Comprehensive answer to the user's question synthesizing all search results")
+    query_intent: str = Field(
+        description="Interpreted intent of the user query (e.g., 'Breaking news search', 'Historical research')"
+    )
 
 
 class NewsAgentOutput(BaseModel):
@@ -80,28 +100,26 @@ class NewsAgentOutput(BaseModel):
 news_agent = Agent(
     'openai:gpt-4o',  # Can be changed to other models
     deps_type=NewsAgentDependencies,
-    output_type=NewsAgentOutput,
+    output_type=AgentAnalysis,
     instructions=(
         'You are an intelligent news research assistant. Your role is to help users find '
         'relevant news articles by searching both external sources (DuckDuckGo) and the '
         'internal news database. '
         '\n\n'
-        'When responding to queries:\n'
+        'WORKFLOW:\n'
         '1. ALWAYS use BOTH search tools: search_duckduckgo() AND search_news_database()\n'
         '2. For database search, extract relevant keywords and topics from the user query\n'
-        '3. Organize results strictly by source - DO NOT mix them\n'
-        '4. Provide TWO outputs:\n'
-        '   - "summary": Brief overview of what was found\n'
-        '   - "answer": Complete, detailed answer synthesizing information from ALL results\n'
+        '3. Analyze all results from both sources\n'
         '\n'
-        'CRITICAL OUTPUT STRUCTURE:\n'
-        '- "duckduckgo_results": ONLY results from search_duckduckgo() tool\n'
-        '- "database_results": ONLY results from search_news_database() tool\n'
-        '- "duckduckgo_count": Count of DuckDuckGo results\n'
-        '- "database_count": Count of database results\n'
-        '- "total_results": Sum of both counts\n'
-        '- "sources_used": List which sources you actually searched\n'
-        '- "answer": Comprehensive answer using information from BOTH sources\n'
+        'YOUR OUTPUT (3 fields only):\n'
+        '1. "summary": Brief overview of what was found across all sources\n'
+        '2. "answer": Comprehensive answer synthesizing information from ALL search results\n'
+        '3. "query_intent": Your interpretation of what the user is looking for\n'
+        '\n'
+        'IMPORTANT:\n'
+        '- Do NOT include the raw search results in your output\n'
+        '- The actual search results will be preserved programmatically\n'
+        '- Focus on providing insightful analysis and synthesis\n'
         '\n'
         'SEARCH STRATEGY:\n'
         '- For real-time/breaking news: Use DuckDuckGo\n'
@@ -161,30 +179,47 @@ async def search_duckduckgo(
                     parsed_results.append({
                         "title": item.get("title", ""),
                         "url": item.get("href", ""),
-                        "snippet": item.get("body", ""),
+                        "content": item.get("body", ""),
                         "source": "DuckDuckGo",
                         "published_at": None,
+                        "topic": None,
+                        "sentiment": None,
+                        "sentiment_score": None,
+                        "relevance_score": None,
                     })
             
             return parsed_results if parsed_results else [{
                 "title": f"No results found for: {query}",
                 "url": f"https://duckduckgo.com/?q={query.replace(' ', '+')}",
-                "snippet": "Try searching directly on DuckDuckGo.",
+                "content": "Try searching directly on DuckDuckGo.",
                 "source": "DuckDuckGo",
                 "published_at": None,
+                "topic": None,
+                "sentiment": None,
+                "sentiment_score": None,
+                "relevance_score": None,
             }]
             
         except Exception as e:
             return [{
                 "title": f"Search error for: {query}",
                 "url": f"https://duckduckgo.com/?q={query.replace(' ', '+')}",
-                "snippet": f"Error: {str(e)}. Try searching directly on DuckDuckGo.",
+                "content": f"Error: {str(e)}. Try searching directly on DuckDuckGo.",
                 "source": "DuckDuckGo",
                 "published_at": None,
+                "topic": None,
+                "sentiment": None,
+                "sentiment_score": None,
+                "relevance_score": None,
             }]
     
     # Run synchronous function in thread pool to avoid blocking
-    return await asyncio.to_thread(_search_sync)
+    results = await asyncio.to_thread(_search_sync)
+    
+    # Track results in dependencies
+    ctx.deps.duckduckgo_results.extend(results)
+    
+    return results
 
 
 @news_agent.tool
@@ -194,7 +229,7 @@ async def search_news_database(
     topic: Optional[str] = None,
     sentiment: Optional[str] = None,
     max_results: Optional[int] = None,
-    similarity_threshold: float = 0.2
+    similarity_threshold: float = 0.4
 ) -> List[dict]:
     """
     Search the internal news database using semantic search with embeddings.
@@ -202,7 +237,7 @@ async def search_news_database(
     IMPORTANT: This searches YOUR database with ML-analyzed articles using semantic similarity.
     Always try this tool to find relevant articles from your collection.
     
-    Uses cosine similarity on embeddings to find semantically similar articles.
+    Uses pgvector's optimized cosine similarity for fast, accurate results.
     
     Use this tool when:
     - Looking for articles with specific topics (Technology, Politics, Business, Health, World, etc.)
@@ -215,7 +250,7 @@ async def search_news_database(
         topic: Filter by topic - Available: Technology, Politics, Business, Health, World, Sports, Entertainment
         sentiment: Filter by sentiment ('positive', 'negative', 'neutral')
         max_results: Maximum number of results to return (default: from dependencies)
-        similarity_threshold: Minimum cosine similarity (0.0-1.0, default: 0.5 = moderate match)
+        similarity_threshold: Minimum similarity score (0.0-1.0, default: 0.4 = moderately similar)
     
     Returns:
         List of relevant news articles from the database with similarity scores >= threshold
@@ -228,252 +263,46 @@ async def search_news_database(
     
     try:
         with get_db_session() as session:
-            logger.info("📊 Generating query embedding...")
-            query_embedding = generate_embedding(query)
+            # Use shared similarity search function (same as API for consistent results)
+            from anip.shared.utils.similarity_search import search_similar_articles
             
-            if query_embedding is None:
-                logger.warning("❌ Failed to generate query embedding - returning empty results")
+            similar_articles = search_similar_articles(
+                query=query,
+                session=session,
+                limit=limit,
+                similarity_threshold=similarity_threshold,
+                topic=topic,
+                sentiment=sentiment
+            )
+            
+            if not similar_articles:
+                logger.info("⚠️  No articles found matching criteria - returning empty results")
                 return []
             
-            logger.info(f"✅ Query embedding generated - Shape: {len(query_embedding) if query_embedding else 0}")
-            
-            # Build query with filters - only get articles with embeddings
-            db_query = select(NewsArticle).filter(NewsArticle.embedding.isnot(None))
-            
-            # Apply optional filters
-            if topic:
-                logger.info(f"🔖 Filtering by topic: {topic}")
-                db_query = db_query.filter(NewsArticle.topic == topic)
-            if sentiment:
-                logger.info(f"😊 Filtering by sentiment: {sentiment}")
-                db_query = db_query.filter(NewsArticle.sentiment == sentiment)
-            
-            # Get all articles matching filters
-            logger.info("📚 Querying database for articles with embeddings...")
-            articles = session.execute(db_query).scalars().all()
-            
-            logger.info(f"📊 Found {len(articles)} articles with embeddings in database")
-            
-            if not articles:
-                logger.warning("⚠️  No articles with embeddings found - returning empty results")
-                return []
-            
-            # Calculate cosine similarity for each article
-            import numpy as np
-            
-            logger.info(f"🧮 Calculating similarity scores (threshold: {similarity_threshold})...")
+            # Convert to agent-compatible format
             results = []
-            similarity_scores = []
+            for article in similar_articles:
+                results.append({
+                    "title": article["title"],
+                    "url": article["url"],
+                    "content": article.get("content"),
+                    "source": article.get("source") or "Internal Database",
+                    "published_at": article["published_at"].isoformat() if article.get("published_at") else None,
+                    "topic": article.get("topic"),
+                    "sentiment": article.get("sentiment"),
+                    "sentiment_score": article.get("sentiment_score"),
+                    "relevance_score": article["similarity_score"],
+                })
             
-            for i, article in enumerate(articles):
-                # Check if embedding exists and is not empty
-                if article.embedding is not None:
-                    try:
-                        # Convert to numpy arrays
-                        emb1 = np.array(query_embedding)
-                        emb2 = np.array(article.embedding)
-                        
-                        # Check if arrays are not empty
-                        if len(emb1) == 0 or len(emb2) == 0:
-                            logger.warning(f"⚠️  Article {i+1} has empty embedding - skipping")
-                            continue
-                        
-                        # Validate embedding dimensions match
-                        if len(emb1) != len(emb2):
-                            logger.warning(f"⚠️  Article {i+1} embedding dimension mismatch: query={len(emb1)}, article={len(emb2)}")
-                            continue
-                        
-                        # Check for zero or near-zero embeddings
-                        norm1 = np.linalg.norm(emb1)
-                        norm2 = np.linalg.norm(emb2)
-                        
-                        if norm1 == 0:
-                            logger.warning(f"⚠️  Query embedding has zero norm - skipping all articles")
-                            break
-                        
-                        if norm2 == 0 or norm2 < 1e-6:  # Very small norm threshold
-                            logger.debug(f"⚠️  Article {i+1} has zero/very small norm ({norm2:.6f}) - skipping")
-                            continue
-                        
-                        # Normalize embeddings
-                        emb1_normalized = emb1 / norm1
-                        emb2_normalized = emb2 / norm2
-                        
-                        # Cosine similarity: dot product of normalized vectors (range: -1 to 1)
-                        similarity = float(np.dot(emb1_normalized, emb2_normalized))
-                        
-                        # Check for NaN or invalid values
-                        if np.isnan(similarity) or np.isinf(similarity):
-                            logger.warning(f"⚠️  Article {i+1} has invalid similarity: {similarity} - skipping")
-                            continue
-                        
-                        # Convert to 0-1 scale for easier interpretation (0 = orthogonal, 1 = identical)
-                        # similarity_01 = (similarity + 1) / 2  # Optional: scale to 0-1
-                        
-                        similarity_scores.append(similarity)
-                        logger.debug(f"📊 Article {i+1}: Similarity: {similarity:.4f} (raw cosine)")
-                        
-                        # Only include if similarity >= threshold
-                        # Note: Cosine similarity ranges from -1 to 1, so threshold of 0.2 means "somewhat similar"
-                        if similarity >= similarity_threshold:
-                            logger.info(f"✅ Article {i+1}: '{article.title[:50]}...' - Similarity: {similarity:.4f} (>= {similarity_threshold})")
-                            results.append({
-                                "title": article.title,
-                                "url": article.url,
-                                "snippet": article.content[:200] + "..." if article.content else None,
-                                "source": article.source or "Internal Database",
-                                "published_at": article.published_at.isoformat() if article.published_at else None,
-                                "topic": article.topic,
-                                "sentiment": article.sentiment,
-                                "sentiment_score": float(article.sentiment_score) if article.sentiment_score else None,
-                                "relevance_score": round(similarity, 4),
-                            })
-                        else:
-                            logger.info(f"⏭️  Article {i+1}: '{article.title[:50]}...' - Similarity: {similarity:.4f} (< {similarity_threshold}) - filtered out")
-                    except Exception as e:
-                        logger.error(f"❌ Error processing article {i+1}: {str(e)}", exc_info=True)
-                        continue
+            # Track results in dependencies
+            ctx.deps.database_results.extend(results)
             
-            # Log statistics
-            if similarity_scores:
-                logger.info(f"📈 Similarity stats - Min: {min(similarity_scores):.4f}, Max: {max(similarity_scores):.4f}, Mean: {sum(similarity_scores)/len(similarity_scores):.4f}")
-                logger.info(f"✅ Found {len(results)} articles above threshold ({similarity_threshold}) out of {len(articles)} total")
-            else:
-                logger.warning("⚠️  No similarity scores calculated")
-            
-            # Sort by similarity (descending) and limit to max_results
-            results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
-            final_results = results[:limit]
-            
-            logger.info(f"🎯 Returning {len(final_results)} top results (limit: {limit})")
-            return final_results
+            logger.info(f"🎯 Returning {len(results)} database results")
+            return results
             
     except Exception as e:
         logger.error(f"❌ Database search error: {str(e)}", exc_info=True)
-        # Return empty list on error, don't fail the whole search
-        return []
-
-
-@news_agent.tool
-async def search_news_database_text(
-    ctx: RunContext[NewsAgentDependencies],
-    query: str,
-    topic: Optional[str] = None,
-    sentiment: Optional[str] = None,
-    max_results: Optional[int] = None
-) -> List[dict]:
-    """
-    Search the internal news database using text-based filtering.
-    
-    Use this tool when semantic search is not needed or as a fallback.
-    Searches by matching keywords in title or content.
-    
-    Args:
-        query: Search keywords
-        topic: Filter by topic
-        sentiment: Filter by sentiment
-        max_results: Maximum number of results
-    
-    Returns:
-        List of matching news articles
-    """
-    limit = max_results or ctx.deps.max_results
-    
-    try:
-        with get_db_session() as session:
-            # Build query with text search and filters
-            db_query = select(NewsArticle)
-            
-            # Text search in title or content
-            search_filter = (
-                NewsArticle.title.ilike(f"%{query}%") | 
-                NewsArticle.content.ilike(f"%{query}%")
-            )
-            db_query = db_query.filter(search_filter)
-            
-            if topic:
-                db_query = db_query.filter(NewsArticle.topic == topic)
-            if sentiment:
-                db_query = db_query.filter(NewsArticle.sentiment == sentiment)
-            
-            # Order by most recent
-            db_query = db_query.order_by(NewsArticle.published_at.desc())
-            db_query = db_query.limit(limit)
-            
-            articles = session.execute(db_query).scalars().all()
-            
-            results = []
-            for article in articles:
-                results.append({
-                    "title": article.title,
-                    "url": article.url,
-                    "snippet": article.content[:200] + "..." if article.content else None,
-                    "source": article.source,
-                    "published_at": article.published_at.isoformat() if article.published_at else None,
-                    "topic": article.topic,
-                    "sentiment": article.sentiment,
-                    "sentiment_score": float(article.sentiment_score) if article.sentiment_score else None,
-                })
-            
-            return results if results else [{"error": "No articles found matching query"}]
-            
-    except Exception as e:
-        return [{"error": str(e), "query": query}]
-
-
-@news_agent.tool
-async def get_database_stats(ctx: RunContext[NewsAgentDependencies]) -> dict:
-    """
-    Get statistics about the news database.
-    
-    Use this tool to understand what's available in the database:
-    - Total articles count
-    - Available topics
-    - Sentiment distribution
-    - Date range of articles
-    
-    Returns:
-        Database statistics
-    """
-    try:
-        with get_db_session() as session:
-            total = session.query(func.count(NewsArticle.id)).scalar()
-            
-            # Get topic distribution
-            topics = session.query(
-                NewsArticle.topic,
-                func.count(NewsArticle.id)
-            ).filter(
-                NewsArticle.topic.isnot(None)
-            ).group_by(NewsArticle.topic).all()
-            
-            # Get sentiment distribution
-            sentiments = session.query(
-                NewsArticle.sentiment,
-                func.count(NewsArticle.id)
-            ).filter(
-                NewsArticle.sentiment.isnot(None)
-            ).group_by(NewsArticle.sentiment).all()
-            
-            # Get date range
-            date_range = session.query(
-                func.min(NewsArticle.published_at),
-                func.max(NewsArticle.published_at)
-            ).filter(
-                NewsArticle.published_at.isnot(None)
-            ).first()
-            
-            return {
-                "total_articles": total,
-                "topics": {topic: count for topic, count in topics},
-                "sentiments": {sentiment: count for sentiment, count in sentiments},
-                "date_range": {
-                    "earliest": date_range[0].isoformat() if date_range[0] else None,
-                    "latest": date_range[1].isoformat() if date_range[1] else None,
-                }
-            }
-    except Exception as e:
-        return {"error": str(e)}
+        return []  # Return empty list on error, don't fail the entire agent
 
 
 # Example usage function
@@ -491,7 +320,7 @@ async def search_news(
         search_provider: "duckduckgo", "database", or "both"
     
     Returns:
-        Structured news search results
+        Structured news search results with LLM analysis and actual tool results
     """
     deps = NewsAgentDependencies(
         user_query=query,
@@ -499,8 +328,31 @@ async def search_news(
         search_provider=search_provider
     )
     
+    # Run agent - this populates deps with tool results and returns LLM analysis
     result = await news_agent.run(query, deps=deps)
-    return result.output
+    llm_analysis: AgentAnalysis = result.output
+    
+    # Construct final output by combining LLM analysis with actual tool results
+    sources_used = []
+    if deps.duckduckgo_results:
+        sources_used.append("DuckDuckGo")
+    if deps.database_results:
+        sources_used.append("Internal Database")
+    
+    return NewsAgentOutput(
+        # LLM-generated fields
+        summary=llm_analysis.summary,
+        answer=llm_analysis.answer,
+        query_intent=llm_analysis.query_intent,
+        # Programmatically populated from actual tool outputs
+        duckduckgo_results=[NewsSearchResult(**r) for r in deps.duckduckgo_results],
+        database_results=[NewsSearchResult(**r) for r in deps.database_results],
+        # Metadata
+        sources_used=sources_used,
+        total_results=len(deps.duckduckgo_results) + len(deps.database_results),
+        duckduckgo_count=len(deps.duckduckgo_results),
+        database_count=len(deps.database_results)
+    )
 
 
 # Example for running the agent
@@ -517,16 +369,28 @@ if __name__ == "__main__":
         print(f"Intent: {result.query_intent}")
         print(f"Sources: {', '.join(result.sources_used)}")
         print(f"\nFound {result.total_results} articles:")
-        for i, article in enumerate(result.articles, 1):
-            print(f"\n{i}. {article.title}")
-            print(f"   Source: {article.source}")
-            print(f"   URL: {article.url}")
-            if article.relevance_score:
-                print(f"   Relevance: {article.relevance_score:.2%}")
+        
+        # Show DuckDuckGo results
+        if result.duckduckgo_results:
+            print(f"\nDuckDuckGo Results ({len(result.duckduckgo_results)}):")
+            for i, article in enumerate(result.duckduckgo_results, 1):
+                print(f"\n{i}. {article.title}")
+                print(f"   Source: {article.source}")
+                print(f"   URL: {article.url}")
+        
+        # Show database results
+        if result.database_results:
+            print(f"\nDatabase Results ({len(result.database_results)}):")
+            for i, article in enumerate(result.database_results, 1):
+                print(f"\n{i}. {article.title}")
+                print(f"   Source: {article.source}")
+                print(f"   URL: {article.url}")
+                if article.relevance_score:
+                    print(f"   Relevance: {article.relevance_score:.2%}")
         
         # Example 2: Search database for technology news
         print("\n" + "=" * 70)
-        print("Example 2: Searching database for positive technology news")
+        print("Example 2: Searching database for technology news")
         print("=" * 70)
         result = await search_news(
             "machine learning innovations",
@@ -534,7 +398,8 @@ if __name__ == "__main__":
             search_provider="database"
         )
         print(f"\nSummary: {result.summary}")
-        print(f"Found {result.total_results} articles")
+        print(f"Answer: {result.answer}")
+        print(f"Found {result.total_results} articles from database")
     
     asyncio.run(main())
 

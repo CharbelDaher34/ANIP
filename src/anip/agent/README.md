@@ -15,7 +15,6 @@ The **News Agent** is an intelligent assistant that can search for news articles
 - 🎯 **Multi-Source**: Combines external and internal sources
 - 📊 **ML Insights**: Access to topic classification and sentiment analysis
 - 🤖 **Intent Understanding**: Automatically chooses the right tools based on query
-- 📈 **Database Stats**: Can analyze what's available in the database
 
 ### Agent Architecture
 
@@ -28,7 +27,9 @@ from anip.agent import search_news
 result = await search_news("artificial intelligence news", max_results=5)
 
 print(result.summary)  # AI-generated summary
-print(result.articles)  # List of relevant articles
+print(result.answer)  # Comprehensive answer
+print(result.duckduckgo_results)  # DuckDuckGo results
+print(result.database_results)  # Database results
 print(result.sources_used)  # Which sources were queried
 ```
 
@@ -44,16 +45,6 @@ print(result.sources_used)  # Which sources were queried
    - Best for: Analyzed content, topic/sentiment filtering
    - Returns: Full article metadata with relevance scores
 
-3. **`search_news_database_text`**
-   - Text-based keyword search
-   - Best for: Fallback when semantic search unavailable
-   - Returns: Articles matching keywords
-
-4. **`get_database_stats`**
-   - Database statistics and distribution
-   - Best for: Understanding available data
-   - Returns: Counts, topics, sentiments, date ranges
-
 ### Usage Examples
 
 #### Example 1: General News Search
@@ -68,46 +59,42 @@ result = await search_news(
 )
 
 print(f"Summary: {result.summary}")
+print(f"Answer: {result.answer}")
 print(f"Found {result.total_results} articles")
 
-for article in result.articles:
-    print(f"- {article.title}")
+# DuckDuckGo results
+for article in result.duckduckgo_results:
+    print(f"- {article.title} (DuckDuckGo)")
+    print(f"  URL: {article.url}")
+
+# Database results
+for article in result.database_results:
+    print(f"- {article.title} (Database)")
     print(f"  Source: {article.source}")
     print(f"  Sentiment: {article.sentiment}")
+    print(f"  Relevance: {article.relevance_score}")
 ```
 
-#### Example 2: Database-Only Search with Filters
+#### Example 2: Database-Only Search
 
 ```python
-from anip.agent import news_agent, NewsAgentDependencies
+from anip.agent import search_news
 
-deps = NewsAgentDependencies(
-    user_query="AI innovations",
+result = await search_news(
+    "machine learning innovations",
     max_results=3,
-    search_provider="database"
+    search_provider="database"  # Only search internal database
 )
 
-result = await news_agent.run(
-    "Find positive technology news about AI",
-    deps=deps
-)
+print(f"Summary: {result.summary}")
+print(f"Answer: {result.answer}")
+print(f"Found {result.database_count} articles from database")
 
-print(result.output.summary)
-```
-
-#### Example 3: With Custom Tools
-
-```python
-from anip.agent import news_agent
-from pydantic_ai import RunContext
-
-@news_agent.tool
-async def check_breaking_news(ctx: RunContext) -> dict:
-    """Custom tool to check if query is about breaking news."""
-    # Your custom logic
-    return {"is_breaking": True, "category": "technology"}
-
-result = await news_agent.run("Latest tech news", deps=deps)
+for article in result.database_results:
+    print(f"- {article.title}")
+    print(f"  Topic: {article.topic}")
+    print(f"  Sentiment: {article.sentiment}")
+    print(f"  Relevance: {article.relevance_score}")
 ```
 
 ### Dependencies
@@ -128,11 +115,15 @@ The agent returns `NewsAgentOutput`:
 
 ```python
 class NewsAgentOutput(BaseModel):
-    summary: str                      # AI-generated summary
-    articles: List[NewsSearchResult]  # Found articles
-    sources_used: List[str]           # Sources queried
-    query_intent: str                 # Interpreted intent
-    total_results: int                # Total count
+    summary: str                                    # AI-generated summary
+    answer: str                                     # Comprehensive answer synthesizing all results
+    query_intent: str                              # Interpreted intent
+    duckduckgo_results: List[NewsSearchResult]     # Results from DuckDuckGo search
+    database_results: List[NewsSearchResult]        # Results from internal database search
+    sources_used: List[str]                        # Sources queried
+    total_results: int                              # Total count
+    duckduckgo_count: int                          # Number of DuckDuckGo results
+    database_count: int                             # Number of database results
 ```
 
 Each article is a `NewsSearchResult`:
@@ -174,7 +165,14 @@ async def main():
     )
     
     print(result.summary)
-    for article in result.articles:
+    print(result.answer)
+    
+    # Process DuckDuckGo results
+    for article in result.duckduckgo_results:
+        print(f"- {article.title} (DuckDuckGo)")
+    
+    # Process database results
+    for article in result.database_results:
         print(f"- {article.title} ({article.source})")
 
 asyncio.run(main())
@@ -229,45 +227,6 @@ result = await news_agent.run(
 4. **Monitor Performance**:
    - Use Pydantic Logfire for observability
    - Track tool usage and response times
-
-## Adding New Agents
-
-To add a new agent:
-
-1. Create a new file in this directory (e.g., `summary_agent.py`)
-2. Define dependencies and output models
-3. Create the agent with tools
-4. Export from `__init__.py`
-5. Add documentation here
-
-Example structure:
-
-```python
-from dataclasses import dataclass
-from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext
-
-@dataclass
-class YourDependencies:
-    # Your dependencies
-    pass
-
-class YourOutput(BaseModel):
-    # Your output structure
-    pass
-
-your_agent = Agent(
-    'openai:gpt-4o',
-    deps_type=YourDependencies,
-    output_type=YourOutput,
-    instructions="Your instructions"
-)
-
-@your_agent.tool
-async def your_tool(ctx: RunContext[YourDependencies]) -> dict:
-    """Your tool implementation."""
-    pass
-```
 
 ## Dependencies
 

@@ -5,14 +5,16 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
+from pathlib import Path
 
-from app.routes import router as api_router
+from app.news import router as news_router
+from app.conversations import router as conversations_router
 from anip.shared.database import Base, engine
-from anip.shared.models.news import NewsArticle
 from anip.config import settings
 
 # Configure logging
@@ -78,7 +80,16 @@ app.add_middleware(
 )
 
 # Include API routes
-app.include_router(api_router)
+app.include_router(news_router)
+app.include_router(conversations_router)
+
+# Mount static files for UI
+ui_static_path = Path(__file__).parent / "ui" / "static"
+if ui_static_path.exists():
+    app.mount("/static", StaticFiles(directory=str(ui_static_path)), name="static")
+    logger.info(f"✅ Mounted static files from {ui_static_path}")
+else:
+    logger.warning(f"⚠️  UI static directory not found at {ui_static_path}")
 
 
 @app.exception_handler(RequestValidationError)
@@ -109,8 +120,24 @@ async def root():
         "version": "1.0.0",
         "status": "running",
         "docs": "/docs",
-        "api": "/api"
+        "api": "/api",
+        "chat": "/chat"
     }
+
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_ui():
+    """Serve the chat UI."""
+    ui_html_path = Path(__file__).parent / "ui" / "static" / "index.html"
+    
+    if not ui_html_path.exists():
+        return HTMLResponse(
+            content="<h1>Chat UI not found</h1><p>The UI files are not available.</p>",
+            status_code=404
+        )
+    
+    with open(ui_html_path, 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
 
 
 @app.get("/health")

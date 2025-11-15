@@ -31,6 +31,23 @@ def save_articles_batch(articles: List[Dict[str, Any]]) -> int:
     
     with get_db_session() as session:
         for article_data in articles:
+            # Validate article content before saving
+            content = article_data.get('content', '')
+            
+            # Skip if content is empty
+            if not content or not content.strip():
+                skipped_count += 1
+                logger.warning(f"Skipped article with empty content: {article_data.get('title', 'Unknown')[:50]}")
+                print(f"⚠️  Skipped (empty content): {article_data.get('title', 'Unknown')[:50]}")
+                continue
+            
+            # Skip if content contains paid plan message
+            if "ONLY AVAILABLE IN PAID PLANS" in content.upper():
+                skipped_count += 1
+                logger.warning(f"Skipped article with paid plan message: {article_data.get('title', 'Unknown')[:50]}")
+                print(f"⚠️  Skipped (paid plan content): {article_data.get('title', 'Unknown')[:50]}")
+                continue
+            
             # Create a savepoint for this article
             savepoint = session.begin_nested()
             
@@ -66,8 +83,9 @@ def save_articles_batch(articles: List[Dict[str, Any]]) -> int:
                 print(f"⚠️  Skipped due to error: {article_data.get('title', 'Unknown')[:50]}")
                 continue
     
+    total_processed = saved_count + skipped_count
     if skipped_count > 0:
-        print(f"📊 Batch summary: {saved_count} new, {skipped_count} skipped, {saved_count} total processed")
+        print(f"📊 Batch summary: {saved_count} saved, {skipped_count} skipped, {total_processed} total processed")
     else:
         print(f"📊 Batch summary: {saved_count} new articles saved")
     return saved_count
