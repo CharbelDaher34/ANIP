@@ -49,7 +49,10 @@ All services communicate via the `anip-net` Docker network.
 
 Watch the ANIP Chat Interface in action:
 
-[**📺 View Demo Video**](demo/anip_rec.mp4)
+<video width="100%" controls>
+  <source src="demo/anip_rec.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
 
 **What you'll see:**
 - 💬 Real-time chat interface with conversation management
