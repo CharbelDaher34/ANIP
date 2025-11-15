@@ -183,7 +183,9 @@ REST API for querying processed articles + AI-powered news search.
 - 8GB+ RAM recommended
 - API keys (see below)
 
-### Setup
+### Initial Setup (First Time Only)
+
+**Important**: Before running the application for the first time, you need to create volumes and set proper permissions:
 
 ```bash
 # Clone repository
@@ -194,20 +196,56 @@ cd ANIP
 cp .env.example .env
 # Edit .env with your API keys
 
+# Create required volumes with proper permissions
+mkdir -p volumes/postgres volumes/mlruns volumes/logs
+sudo chmod -R 777 volumes/
+```
+
+**Why?** The application needs these volumes for:
+- `volumes/postgres`: PostgreSQL data persistence
+- `volumes/mlruns`: MLflow model registry and artifacts
+- `volumes/logs`: Airflow and application logs
+
+### Start Services
+
+```bash
 # Start all services
 docker-compose up -d
 ```
 
 Wait 2-3 minutes for initialization.
 
+### First Run: Train ML Models
+
+**Critical**: On first run, you must train the ML models before processing articles:
+
+```bash
+# 1. Open Airflow UI
+# Go to http://localhost:8080 (login: admin/admin)
+
+# 2. Find and trigger the 'ml_training' DAG
+# This trains classification and sentiment models (~10-15 minutes)
+
+# 3. Wait for ml_training DAG to complete successfully
+
+# 4. Restart MLflow model serving containers
+docker-compose restart anip-model-serving-classification
+docker-compose restart anip-model-serving-sentiment
+```
+
+**Why restart model serving?**  
+The model serving containers start before models exist. After training, restarting them loads the newly trained models from MLflow registry.
+
 ### Access Services
 
 - **Airflow UI**: http://localhost:8080 (admin/admin)
 - **Spark UI**: http://localhost:9090
+- **MLflow UI**: http://localhost:5000
 - **API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
+- **Chat UI**: http://localhost:8000/chat
 
-### Run Pipeline
+### Run Data Pipeline
 
 **Via Airflow UI:**
 1. Go to http://localhost:8080
@@ -220,7 +258,8 @@ Wait 2-3 minutes for initialization.
    - `gdelt_pipeline`
    - `mediastack_pipeline`
 4. After ingestion completes, trigger `spark_ml_processing` to apply ML models
-5. (Optional) Trigger `ml_training` to train/retrain models
+
+> ⚠️ **Important**: Make sure you've completed the [First Run: Train ML Models](#first-run-train-ml-models) step before running `spark_ml_processing`, otherwise the ML processing will fail.
 
 **Via Command Line:**
 ```bash
@@ -235,7 +274,7 @@ docker exec anip-airflow-scheduler airflow dags trigger mediastack_pipeline
 # Process with ML (wait 2-3 min after ingestion)
 docker exec anip-airflow-scheduler airflow dags trigger spark_ml_processing
 
-# Train models (optional)
+# Train/retrain models (if needed)
 docker exec anip-airflow-scheduler airflow dags trigger ml_training
 ```
 
